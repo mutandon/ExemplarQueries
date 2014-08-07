@@ -7,5 +7,5 @@ This package contains a number of algorithms and optimizations to run exemplar q
 
 The test command to be used is "TestExemplar" it runs the complete flow. In order yo make it runs, freebase cleaned and the query files are needed. Query files are available in http://disi.unitn.it/~themis/exemplarquery/
 
-**Requires** ExecutionUtilities and Grava. 
+**Requires** [ExecutionUtilities](https://github.com/mutandon/ExecutionUtilities "Execution Utilities") and [Grava](https://github.com/mutandon/Grava "Grava"). 
 
