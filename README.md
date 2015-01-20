@@ -10,10 +10,6 @@ The test command to be used is "TestExemplar" it runs the complete flow. In orde
 
 
 
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
 ## Running Example
 
 Running code and Example is not straightforward.
