@@ -24,11 +24,10 @@
 
 package eu.unitn.disi.db.exemplar.commands;
 
-import eu.unitn.disi.db.command.Command;
 import eu.unitn.disi.db.command.CommandInput;
 import eu.unitn.disi.db.command.DynamicInput;
-import eu.unitn.disi.db.command.ParametersNumber;
 import eu.unitn.disi.db.command.exceptions.ExecutionException;
+import eu.unitn.disi.db.command.global.Command;
 import eu.unitn.disi.db.command.util.StopWatch;
 import eu.unitn.disi.db.exemplar.core.WeightedPath;
 import eu.unitn.disi.db.exemplar.core.algorithms.MostInformativePath;
@@ -58,14 +57,14 @@ import org.apache.log4j.Level;
  * @author Davide Mottin <mottin@disi.unitn.eu>
  */
 public class Mst extends Command {
-    private BigMultigraph graph; 
+    private BigMultigraph graph;
     private double threshold;
     private double restartProb;
     private int neighborSize;
-    private String[] startingNodes; 
+    private String[] startingNodes;
     private String labelFrequenciesFile;
-    private String hubsFile; 
-    
+    private String hubsFile;
+
     private static class Entity {
 
         private String mid;
@@ -158,29 +157,29 @@ public class Mst extends Command {
         StopWatch watch = new StopWatch();
         PersonalizedPageRank ppv;
         Multigraph neighborhood;
-        MostInformativePath shortAlgo; 
-        Map<Long,Double> labelFrequencies = new HashMap<>(); 
+        MostInformativePath shortAlgo;
+        Map<Long,Double> labelFrequencies = new HashMap<>();
         double frequencies = 0.0;
         double labelPrior = 0;
         List<Long> sources;
-        Set<Long> hubs = new HashSet<>(); 
-        List<WeightedPath> paths; 
-        
+        Set<Long> hubs = new HashSet<>();
+        List<WeightedPath> paths;
+
 //        entities.add(new Entity("/m/055t58", 1399.337158));
 //        entities.add(new Entity("/m/09jcvs", 276.4039));
 //        entities.add(new Entity("/m/0qcrj", 655.279785));
 //        entities.add(new Entity("/m/09c7w0", 84.771828));
-        
+
         System.out.printf("Input entities %s\n",Arrays.toString(startingNodes));
         //TODO: generalize not only for Freebase
-        //What if we put particles differently using the scores??? 
+        //What if we put particles differently using the scores???
         watch.start();
         try {
             Utilities.readFileIntoMap(labelFrequenciesFile, " ", labelFrequencies, Long.class, Double.class);
             info("Read %s label file", labelFrequenciesFile);
             Utilities.readFileIntoCollection(hubsFile, hubs, Long.class);
             info("Read %s hubs file", hubsFile);
-            
+
             sources = new ArrayList<>();
 //            for (Entity en : entities) {
 //                sources.add(FreebaseConstants.convertMidToLong(en.mid));
@@ -188,7 +187,7 @@ public class Mst extends Command {
             for (String s : startingNodes) {
                 sources.add(FreebaseConstants.convertMidToLong(s));
             }
-            //Inverse document frequency (the higher the better) 
+            //Inverse document frequency (the higher the better)
             for (double freq : labelFrequencies.values()) {
                 frequencies += freq;
             }
@@ -209,16 +208,16 @@ public class Mst extends Command {
             ppv.setHubs(hubs);
             ppv.setKeepOnlyQueryEdges(false);
             ppv.compute();
-            
+
             neighborhood = ppv.getNeighborhood();
             info("Computed relevant neighborhood in %dms", watch.getElapsedTimeMillis());
             info("Relevant neighborhood has %d nodes and %d edges", neighborhood.vertexSet().size(), neighborhood.edgeSet().size());
-            
+
 //            Map<Long, Double> invertedEdgeWeights = new HashMap<>();
 //            for (Long label: labelFrequencies.keySet()) {
 //                invertedEdgeWeights.put(label, 1/labelFrequencies.get(label));
 //            }
-            
+
             watch.reset();
             shortAlgo = new MostInformativePath();
             shortAlgo.setAlpha(1.2);
@@ -236,27 +235,27 @@ public class Mst extends Command {
             //Declaration block for MST to be put into another method
             //List<Pair<Double,List<Edge>>> weightedPaths = new ArrayList<>();
             Collection<Edge> topPath;
-            List<Pair<Long,Long>> endPoints = new ArrayList<>(); 
-            Set<Long> consideredEndPoints; 
+            List<Pair<Long,Long>> endPoints = new ArrayList<>();
+            Set<Long> consideredEndPoints;
             Pair<Long,Long> endPoint;
-            List<Triple> mst; 
-            double weight; 
+            List<Triple> mst;
+            double weight;
 
             //Compute weights
 //            for (WeightedPath path : paths) {
 //                info(path.toString());
-//                weight = 0; 
+//                weight = 0;
 //                for (Edge e : path.getPath()) {
 //                    weight += 1/invertedEdgeWeights.get(e.getLabel());
 //                }
 //                weightedPaths.add(new Pair<>(weight,path));
 //            }
-            
+
             //Sort the paths by decreasing weights
             Collections.sort(paths);
             //Collections.reverse(paths);
-            
-            //Compute endpoints 
+
+            //Compute endpoints
             for (WeightedPath wPath: paths) {
                 topPath = wPath.getPath();
                 consideredEndPoints = new HashSet<>();
@@ -265,14 +264,14 @@ public class Mst extends Command {
                         consideredEndPoints.remove(e.getSource());
                     } else {
                         consideredEndPoints.add(e.getSource());
-                    } 
+                    }
                     if (consideredEndPoints.contains(e.getDestination())) {
                         consideredEndPoints.remove(e.getDestination());
                     } else {
                         consideredEndPoints.add(e.getDestination());
-                    } 
+                    }
                 }
-                assert consideredEndPoints.size() == 2; 
+                assert consideredEndPoints.size() == 2;
                 if (consideredEndPoints.size() != 2 ) {
                     error("The number of endpoints for path %s is != 2", topPath.toString());
                 } else {
@@ -281,15 +280,15 @@ public class Mst extends Command {
                 }
             }
             info("Computed path endpoints: %s", endPoints);
-                        
-            //Compute MST using Kruskal algorithm 
+
+            //Compute MST using Kruskal algorithm
             info("Computing MST with Kruskal algorithm");
             watch.reset();
-            consideredEndPoints = new HashSet<>(); 
+            consideredEndPoints = new HashSet<>();
             mst = new ArrayList<>();
             for (int i = 0; i < paths.size(); i++) {
                 topPath = paths.get(i).getPath();
-                //Check if we create a cycle. 
+                //Check if we create a cycle.
                 endPoint = endPoints.get(i);
                 if (!consideredEndPoints.contains(endPoint.getFirst()) || !consideredEndPoints.contains(endPoint.getSecond())) {
                     consideredEndPoints.add(endPoint.getFirst());
@@ -311,11 +310,11 @@ public class Mst extends Command {
             log(Level.FATAL, ex, null);
         } catch (Exception ex) {
             log(Level.FATAL, ex, "Some other problem occurred");
-        }       
-        
-        
-        
-        
+        }
+
+
+
+
 //        try (org.neo4j.graphdb.Transaction tx = gds.beginTx()) {
 //            watch.start();
 //            for (int i = 0; i < entities.size(); i++) {
@@ -335,8 +334,8 @@ public class Mst extends Command {
 //            }//            System.out.printf("Computed all paths in %dms\n", watch.getElapsedTimeMillis());
 //
 //            Collections.sort(orderedPaths, new PairFirstComparator(false));
-            //MST code 
-            //ADD some kind of ranking. 
+            //MST code
+            //ADD some kind of ranking.
 //            Set<Long> consideredEndPoints = new HashSet<>();
 //            List<Edge> graph = new ArrayList<>();
 //            Node source, dest;
@@ -364,13 +363,12 @@ public class Mst extends Command {
     public void setGraph(BigMultigraph graph) {
         this.graph = graph;
     }
-    
+
     @CommandInput(
         consoleFormat = "-t",
         defaultValue = "1",
         mandatory = false,
-        description = "pruning threshold",
-        parameters = ParametersNumber.TWO
+        description = "pruning threshold"
     )
     public void setThreshold(double threshold) {
         this.threshold = threshold;
@@ -380,8 +378,7 @@ public class Mst extends Command {
         consoleFormat = "-c",
         defaultValue = "0.15",
         mandatory = false,
-        description = "restart probability",
-        parameters = ParametersNumber.TWO
+        description = "restart probability"
     )
     public void setRestartProb(double restartProb) {
         this.restartProb = restartProb;
@@ -391,8 +388,7 @@ public class Mst extends Command {
         consoleFormat = "-s",
         defaultValue = "5000",
         mandatory = false,
-        description = "neighbor size",
-        parameters = ParametersNumber.TWO
+        description = "neighbor size"
     )
     public void setNeighborSize(int neighborSize) {
         this.neighborSize = neighborSize;
@@ -402,8 +398,7 @@ public class Mst extends Command {
         consoleFormat = "--labels",
         defaultValue = "",
         mandatory = true,
-        description = "label frequency file formatted as 'labelid frequency'",
-        parameters = ParametersNumber.TWO
+        description = "label frequency file formatted as 'labelid frequency'"
     )
     public void setLabelFrequenciesFile(String labelFrequenciesFile) {
         this.labelFrequenciesFile = labelFrequenciesFile;
@@ -413,8 +408,7 @@ public class Mst extends Command {
         consoleFormat = "--hubs",
         defaultValue = "",
         mandatory = true,
-        description = "the big hubs file",
-        parameters = ParametersNumber.TWO
+        description = "the big hubs file"
     )
     public void setHubsFile(String hubsFile) {
         this.hubsFile = hubsFile;
@@ -424,8 +418,7 @@ public class Mst extends Command {
         consoleFormat = "--sources",
         defaultValue = "",
         mandatory = true,
-        description = "the sources",
-        parameters = ParametersNumber.TWO
+        description = "the sources"
     )
     public void setStartingNodes(String[] startingNodes) {
         this.startingNodes = startingNodes;

@@ -19,9 +19,8 @@
 package eu.unitn.disi.db.exemplar.commands;
 
 import eu.unitn.disi.db.command.CommandInput;
-import eu.unitn.disi.db.command.LoaderCommand;
-import eu.unitn.disi.db.command.ParametersNumber;
 import eu.unitn.disi.db.command.exceptions.ExecutionException;
+import eu.unitn.disi.db.command.global.LoaderCommand;
 import eu.unitn.disi.db.grava.exceptions.ParseException;
 import eu.unitn.disi.db.grava.graphs.BigMultigraph;
 import eu.unitn.disi.db.grava.utils.Utilities;
@@ -32,28 +31,26 @@ import java.io.IOException;
  * @author Davide Mottin <mottin@disi.unitn.eu>
  */
 public class BigMultigraphLoader extends LoaderCommand {
-    private String graphPath; 
-    
+    private String graphPath;
+
     @Override
     protected void execute() throws ExecutionException {
         try {
             loadedObject = new BigMultigraph(graphPath + "-sin.graph", graphPath + "-sout.graph", Utilities.countLines((graphPath + "-sin.graph")));
-        } catch (ParseException ex) {
-            throw new ExecutionException(ex);
-        } catch (IOException ex) {
+        } catch (ParseException | IOException ex) {
             throw new ExecutionException(ex);
         }
     }
 
-    @CommandInput(parameters = ParametersNumber.TWO,
+    @CommandInput(
         consoleFormat = "-kb",
         defaultValue = "",
         description = "path to the knowledgbase sin and sout files, just up to the prefix, like InputData/freebase ",
         mandatory = true)
     public void setGraphPath(String graphPath) {
         this.graphPath = graphPath;
-    }    
-    
+    }
+
     @Override
     protected String commandDescription() {
         return "Load a big multigraph into main memory";

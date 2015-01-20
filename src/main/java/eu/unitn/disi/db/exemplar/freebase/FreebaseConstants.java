@@ -64,8 +64,8 @@ public class FreebaseConstants {
 
     private static HashMap<String,Long> propertiesToId = null;
     private static HashMap<Long,String> idToProperties = null;
-    
-    
+
+
     /**
      * Represents the patterns that, once found, removes the line from the tsv file
      */
@@ -231,9 +231,15 @@ public class FreebaseConstants {
     public static String convertLongToMid(long decimal) throws NullPointerException, IndexOutOfBoundsException {
         String mid = "";
         String decimalString = decimal + "";
-        
+
         for (int i = 0; i < decimalString.length(); i+= 2) {
-            mid = (char)Integer.parseInt(decimalString.substring(i, i + 2)) + mid;
+            if(decimalString.length() < 3 ){
+                mid = decimalString;
+            } else {
+                mid = (char)Integer.parseInt(decimalString.substring(i, i + 2)) + mid;
+            }
+
+
         }
 
         return "/m/" + mid.toLowerCase();
@@ -271,7 +277,7 @@ public class FreebaseConstants {
         BufferedReader reader = null;
         try {
             String line = null;
-            String[] splittedLine; 
+            String[] splittedLine;
 
             reader = new BufferedReader(new InputStreamReader(FreebaseConstants.class.getResourceAsStream("/fb-properties.txt")));
             while ((line = reader.readLine()) != null) {
@@ -287,8 +293,8 @@ public class FreebaseConstants {
             Utilities.close(reader);
         }
     }
-    
-    
+
+
 //    public static void convertQueryGraph(Multigraph graph) throws NullPointerException, IndexOutOfBoundsException {
 //        Collection<Long> vertices = graph.vertexSet();
 //

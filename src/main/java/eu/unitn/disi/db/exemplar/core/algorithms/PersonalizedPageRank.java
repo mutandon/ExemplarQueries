@@ -31,7 +31,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -67,8 +66,8 @@ public class PersonalizedPageRank extends Algorithm {
     //OUTPUTS
     @AlgorithmOutput
     private Map<Long, Double> personalizedPageRank;
-    @AlgorithmOutput 
-    private Multigraph neighborhood; 
+    @AlgorithmOutput
+    private Multigraph neighborhood;
     @AlgorithmOutput
     private int visitedNodesCount;
     @AlgorithmOutput
@@ -211,8 +210,8 @@ public class PersonalizedPageRank extends Algorithm {
                 }
             }
             //DEBUG:
-            
-            
+
+
             //Assign initial particles to nodes in the query
             for (Long conc : startingNodes) {
                 id = conc;
@@ -414,9 +413,16 @@ public class PersonalizedPageRank extends Algorithm {
             sortedNeighbors = new LinkedList(personalizedPageRank.keySet());
             Collections.sort(sortedNeighbors, new WeightedComparator(personalizedPageRank, true));
             debug("Ranked %d nodes ", sortedNeighbors.size());
-            int retrieved = 0;
             wa1.reset();
             wa1.start();
+
+            //Put nodes from the query at first place
+            sortedNeighbors.removeAll(startingNodes);
+
+            for (Long eId : startingNodes){
+                sortedNeighbors.addFirst(eId);
+            }
+
             for (Long eId : sortedNeighbors) {
                 this.visitedNodesCount++;
                 if (personalizedPageRank.get(eId) > this.threshold && !hubs.contains(eId)) {
@@ -424,9 +430,12 @@ public class PersonalizedPageRank extends Algorithm {
                     long[][] outgoing = kb.outgoingArrayEdgesOf(eId);
                     updateGraph(neighborhood, incoming, true, queryLabelWeights.keySet());
                     updateGraph(neighborhood, outgoing, false, queryLabelWeights.keySet());
-                    retrieved++;
                 } else {
                     //  debug("Skipping " + FreebaseConstants.convertLongToMid(eId));
+                }
+                //Break only if we are sure that we put at least the nodes from query
+                if(this.k > 0 && this.visitedNodesCount > this.startingNodes.size() && neighborhood.numberOfNodes() > this.k ){
+                    break;
                 }
             } //END FOR
             wa1.stop();

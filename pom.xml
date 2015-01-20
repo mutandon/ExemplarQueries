@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>eu.unitn.disi.db.exqs</groupId>
     <artifactId>ExQ</artifactId>
-    <version>1.0</version>
+    <version>2.1-alpha</version>
     <packaging>jar</packaging>
     <pluginRepositories>
         <pluginRepository>
@@ -12,7 +12,7 @@
         </pluginRepository>
     </pluginRepositories>
     <build>
-        <finalName>${artifactId}</finalName>
+        <finalName>${project.artifactId}</finalName>
         <extensions>
             <extension>
                 <groupId>org.apache.maven.wagon</groupId>
@@ -30,10 +30,22 @@
                     <target>1.7</target>
                 </configuration>
             </plugin>
-
+<!--            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>-->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
+                <version>2.5</version>
                 <configuration>
                     <archive>
                         <manifest>
@@ -58,15 +70,29 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>com.atlassian.maven.plugins</groupId>
+                <artifactId>maven-upload-plugin</artifactId>
+                <version>1.1</version>
+                <executions>
+                    <execution>
+                        <id>upload-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>upload</goal>
+                        </goals>
+                        <configuration>
+                            <resourceSrc>${project.build.directory}/${project.build.finalName}.jar</resourceSrc>
+                            <resourceDest></resourceDest>
+                            <serverId>reactor</serverId>
+                            <url>scp://snowwhite.disi.unitn.eu/home/lissandrini/exemplar-demo/freebase</url>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
     <dependencies>
-        <dependency>
-            <groupId>eu.unitn.disi.db</groupId>
-            <artifactId>execUtilities</artifactId>
-            <version>0.1</version>
-            <type>jar</type>
-        </dependency>
         <dependency>
             <groupId>eu.unitn.disi.db</groupId>
             <artifactId>Grava</artifactId>
@@ -77,6 +103,11 @@
             <artifactId>log4j</artifactId>
             <version>1.2.17</version>
             <type>jar</type>
+        </dependency>
+        <dependency>
+            <groupId>eu.unitn.disi.db</groupId>
+            <artifactId>ExecUtils</artifactId>
+            <version>0.2</version>
         </dependency>
     </dependencies>
     <properties>

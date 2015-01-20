@@ -23,18 +23,20 @@
  */
 package eu.unitn.disi.db.exemplar.commands;
 
-import eu.unitn.disi.db.command.Command;
 import eu.unitn.disi.db.command.CommandInput;
 import eu.unitn.disi.db.command.DynamicInput;
-import eu.unitn.disi.db.command.ParametersNumber;
+import eu.unitn.disi.db.command.exceptions.AlgorithmExecutionException;
 import eu.unitn.disi.db.command.exceptions.ExecutionException;
+import eu.unitn.disi.db.command.global.Command;
 import eu.unitn.disi.db.command.util.StopWatch;
 import eu.unitn.disi.db.exemplar.core.VectorSimilarities;
 import eu.unitn.disi.db.exemplar.core.algorithms.ComputeGraphNeighbors;
 import eu.unitn.disi.db.exemplar.core.algorithms.PersonalizedPageRank;
 import eu.unitn.disi.db.exemplar.core.algorithms.PruningAlgorithm;
-import eu.unitn.disi.db.exemplar.core.algorithms.RelatedQuery;
-import eu.unitn.disi.db.exemplar.core.algorithms.RelatedQueryRecursive;
+import eu.unitn.disi.db.exemplar.core.RelatedQuery;
+import eu.unitn.disi.db.exemplar.core.algorithms.IsomorphicQuerySearch;
+import eu.unitn.disi.db.exemplar.core.algorithms.RelatedQuerySearch;
+import eu.unitn.disi.db.exemplar.exceptions.LoadException;
 import eu.unitn.disi.db.exemplar.stats.GraphFilesManager;
 import eu.unitn.disi.db.grava.exceptions.ParseException;
 import eu.unitn.disi.db.grava.graphs.BaseMultigraph;
@@ -64,6 +66,7 @@ public class TestExemplar extends Command {
     private static final int NUM_CORES = 8;
     private BigMultigraph graph;
     private String query;
+    private String hubs;
     private int neighborSize;
     private int topK;
     private int repetitions;
@@ -72,13 +75,14 @@ public class TestExemplar extends Command {
     private double lambda;
     private boolean skipPruning;
     private boolean skipNeighborhood;
+    private boolean limitComputation;
     private String labelFrequenciesFile;
     private String kbPath;
     private int k;
     private String queriesOut;
-    
+
     private HashMap<Long, Double> informativeness;
-    
+
 
     @Override
     protected void execute() throws ExecutionException {
@@ -95,6 +99,7 @@ public class TestExemplar extends Command {
         List<Long> nodes;
         int count = 0;
         Map<Long, String> nodeNames;
+        Set<Long> bighubs;
         StringBuilder sb;
 
         File queriesOutDir = new File(queriesOut);
@@ -125,7 +130,7 @@ public class TestExemplar extends Command {
                         debug("Adding graph: " + child.getAbsolutePath());
                         queryGraph = GraphFilesManager.loadGraph(tmp);
                         files.add(tmp);
-                    } catch (Exception e) {
+                    } catch (ParseException | LoadException e) {
                         error("Query %s is not parsable! ", tmp);
                         //e.printStackTrace();
                     }
@@ -142,7 +147,12 @@ public class TestExemplar extends Command {
                 frequencies += freq;
             }
 
-            
+            bighubs = new HashSet<>();
+            if (hubs != null && !hubs.isEmpty()) {
+                Utilities.readFileIntoCollection(hubs, bighubs, Long.class);
+            }
+
+
             double labelPrior = 0;
             Set<Long> labels = informativeness.keySet();
             for (Long label : labels) {
@@ -159,6 +169,7 @@ public class TestExemplar extends Command {
                 throw new IllegalStateException("Null Knowledgebase!!");
             }
 
+
             info("Loaded freebase into main-memory in %dms", watch.getElapsedTimeMillis());
 
             watch.reset();
@@ -172,12 +183,11 @@ public class TestExemplar extends Command {
 
                     TreeSet<RelatedQuery> orderedQueries = new TreeSet<>();
                     Map<Long, Double> queryLabelWeights;
-                    Map<Long, Long> mappedNodes;
                     Map<Long, Double> popularities;
                     HashSet<RelatedQuery> relatedQueriesUnique;
                     Set<Long> keys;
-                    Collection<Long> startingNodes = new HashSet<Long>(); 
-                    
+                    Collection<Long> startingNodes = new HashSet<>();
+
                     count++;
                     queryGraphMap = null;
 
@@ -220,14 +230,17 @@ public class TestExemplar extends Command {
                             ppv.setRestartProbability(restartProb);
                             ppv.setK(this.neighborSize);
                             ppv.setLabelFrequencies(informativeness);
+                            ppv.setPriorityEdges(queryLabelWeights.keySet());
                             ppv.setKeepOnlyQueryEdges(true);
+                            ppv.setHubs(bighubs);
+                            ppv.compute();
                             neighborhood = ppv.getNeighborhood();
 
                             debug("Time to get the most important neighbors: %dms", watch.getElapsedTimeMillis());
                             debug("Neighbors contains %d edges and %d vertexes", neighborhood.edgeSet().size(), neighborhood.vertexSet().size());
                             popularities = new HashMap(ppv.getPopularity());
                         } else {
-                            debug("Skipping pruning!");
+                            debug("Skipping neighborhood!");
                             neighborhood = new BaseMultigraph();
 
                             debug("Time to get the most important neighbors: %dms", watch.getElapsedTimeMillis());
@@ -267,8 +280,14 @@ public class TestExemplar extends Command {
 
                         //7: COMPUTE RELATED QUERIES
                         watch.reset();
-                        RelatedQueryRecursive isoAlgorithm = new RelatedQueryRecursive(queryGraph);
-                        relatedQueries = isoAlgorithm.findRelated(queryGraph, neighborhood, queryGraphMap);
+                        RelatedQuerySearch isoAlgorithm = new IsomorphicQuerySearch();
+                        isoAlgorithm.setQuery(queryGraph);
+                        isoAlgorithm.setGraph(neighborhood);
+                        isoAlgorithm.setNumThreads(NUM_CORES);
+                        isoAlgorithm.setQueryToGraphMap(queryGraphMap);
+                        isoAlgorithm.setLimitedComputation(limitComputation);
+                        isoAlgorithm.compute();
+                        relatedQueries = isoAlgorithm.getRelatedQueries();
                         relatedQueriesUnique = new HashSet<>(relatedQueries);
                         debug("Found %d related queries of which uniques are %d", relatedQueries.size(), relatedQueriesUnique.size());
 
@@ -282,15 +301,16 @@ public class TestExemplar extends Command {
                             watch.start();
                             nodes = new ArrayList<>();
                             //Normalize popularities
-                            Set<Long> consideredNodes = new HashSet<>();
-                            for (RelatedQuery relQuery : relatedQueriesUnique) {
-                                mappedNodes = relQuery.getMappedConcepts();
-                                for (Long node : mappedNodes.values()) {
-                                    consideredNodes.add(node);
-                                }
-                            }
+                            //Set<Long> consideredNodes = new HashSet<>();
+                            //Map<Long, List<Long>> mappedNodes;
+                            //for (RelatedQuery relQuery : relatedQueriesUnique) {
+                            //    mappedNodes = relQuery.getMappedNodes();
+                            //    for (List<Long> mapNodes : mappedNodes.values()) {
+                            //        consideredNodes.add(nodes.get(0));
+                            //    }
+                            //}
                             info("Computed node vectors in %dms", watch.getElapsedTimeMillis());
-                            //Normalize popularities            
+                            //Normalize popularities
                             for (Long n : keys) {
                                 value = popularities.get(n);
                                 if (value > max) {
@@ -305,22 +325,22 @@ public class TestExemplar extends Command {
                             }
                             for (RelatedQuery relQuery : relatedQueriesUnique) {
                                 int intersections = 1;
-                                mappedNodes = relQuery.getMappedConcepts();
+                                Set<Long> mappedNodes = relQuery.getUsedNodes();
                                 for (Long q : queryGraph.vertexSet()) {
-                                    if (mappedNodes.get(q).equals(q)) {
+                                    if (mappedNodes.contains(q)) {
                                         intersections++;
                                     }
                                 }
                                 intersections *= intersections;
                                 for (Long q : queryGraph.vertexSet()) {
-                                    n1 = mappedNodes.get(q);
+                                    n1 = relQuery.mapOf(q).get(0);
                                     //nodes.add(n1);
                                     if (!popularities.containsKey(n1)) {
                                         pop = 0.0;
                                     } else {
                                         pop = popularities.get(n1);
                                     }
-                                    relQuery.addWeight(mappedNodes.get(q), (lambda * score(queryTables.getNodeMap(q), graphTables.getNodeMap(n1)) + (1 - lambda) * pop) / (intersections));
+                                    relQuery.addWeight(relQuery.mapOf(q).get(0), (lambda * score(queryTables.getNodeMap(q), graphTables.getNodeMap(n1)) + (1 - lambda) * pop) / (intersections));
                                 }
                                 orderedQueries.add(relQuery);
                             }
@@ -333,7 +353,9 @@ public class TestExemplar extends Command {
                         for (RelatedQuery rQuery : orderedQueries.descendingSet()) {
                             a++;
                             String s = String.format("[Q%d,value=%f]", a, rQuery.getTotalWeight());
-                            for (Edge edge : rQuery.getMappedEdges().values()) {
+                            Set<Edge> mappedEdges = rQuery.getUsedEdges();
+
+                            for (Edge edge : mappedEdges ) {
                                 s += (nodeNames.get(edge.getSource()) != null ? nodeNames.get(edge.getSource()) : edge.getSource())
                                         + "->"
                                         + (nodeNames.get(edge.getDestination()) != null ? nodeNames.get(edge.getDestination()) : edge.getDestination()) + " | ";
@@ -344,18 +366,20 @@ public class TestExemplar extends Command {
                             }
                         }
 
-                    }
+                    } //END FOR REPETITIONS
                     watch.reset();
                     //FREE MAIN MEMORY (hopefully)
+                    debug("GC");
                     System.gc();
-                } //END FOR REPETITIONS
-            } //END FOR FILES
+                    debug("GC Done");
+                } //END FOR FILES
+            } //END CHECK FILE EMPTY
         } catch (ParseException ex) {
             fatal("Query parsing failed", ex);
         } catch (IOException ioex) {
             fatal("Unable to open query files: %s ", ioex, query);
             throw new ExecutionException(ioex);
-        } catch (Exception ex) {
+        } catch (NullPointerException | IllegalStateException | LoadException | AlgorithmExecutionException ex) {
             fatal("Something wrong happened, message: %s", ex.getMessage());
             ex.printStackTrace();
             throw new ExecutionException(ex);
@@ -388,8 +412,8 @@ public class TestExemplar extends Command {
         }
         return VectorSimilarities.cosine(vector1, vector2, true);
     }
-    
-    
+
+
     @Override
     protected String commandDescription() {
         return "Compute related queries using mysql flow";
@@ -399,8 +423,7 @@ public class TestExemplar extends Command {
             consoleFormat = "-p",
             defaultValue = "false",
             mandatory = false,
-            description = "avoid using the pruning algorithm",
-            parameters = ParametersNumber.ONE)
+            description = "avoid using the pruning algorithm")
     public void setUsePruning(boolean usePruning) {
         this.skipPruning = usePruning;
     }
@@ -409,8 +432,7 @@ public class TestExemplar extends Command {
             consoleFormat = "-n",
             defaultValue = "false",
             mandatory = false,
-            description = "avoid using the neighborhood algorithm",
-            parameters = ParametersNumber.ONE)
+            description = "avoid using the neighborhood algorithm")
     public void setUseNeighborhood(boolean useNeighborhood) {
         this.skipNeighborhood = useNeighborhood;
     }
@@ -419,8 +441,7 @@ public class TestExemplar extends Command {
             consoleFormat = "-topk",
             defaultValue = "10",
             mandatory = false,
-            description = "number of related queries to output (top-k)",
-            parameters = ParametersNumber.TWO)
+            description = "number of related queries to output (top-k)")
     public void setTopK(int topK) {
         this.topK = topK;
     }
@@ -429,8 +450,7 @@ public class TestExemplar extends Command {
             consoleFormat = "-k",
             defaultValue = "3",
             mandatory = false,
-            description = "parameter of the k-neighborhood",
-            parameters = ParametersNumber.TWO)
+            description = "parameter of the k-neighborhood")
     public void setK(int k) {
         this.k = k;
     }
@@ -439,19 +459,18 @@ public class TestExemplar extends Command {
             consoleFormat = "-c",
             defaultValue = "0.15",
             mandatory = false,
-            description = "restart probability",
-            parameters = ParametersNumber.TWO)
+            description = "restart probability")
     public void setDispersion(double c) {
         this.restartProb = c;
     }
 
     @CommandInput(
             consoleFormat = "-s",
-            defaultValue = "5000",
+            defaultValue = "0",
             mandatory = false,
-            description = "neighbor size",
-            parameters = ParametersNumber.TWO)
+            description = "neighbor size")
     public void setStartPopularity(int size) {
+        //IF ZERO IT WON'T TRIGGER
         this.neighborSize = size;
     }
 
@@ -459,14 +478,12 @@ public class TestExemplar extends Command {
             consoleFormat = "-t",
             defaultValue = "1",
             mandatory = false,
-            description = "pruning threshold",
-            parameters = ParametersNumber.TWO)
+            description = "pruning threshold")
     public void setThreshold(double threshold) {
         this.threshold = threshold;
     }
 
     @CommandInput(
-            parameters = ParametersNumber.TWO,
             consoleFormat = "-q",
             defaultValue = "",
             description = "input query",
@@ -475,7 +492,7 @@ public class TestExemplar extends Command {
         this.query = query;
     }
 
-    @CommandInput(parameters = ParametersNumber.TWO,
+    @CommandInput(
             consoleFormat = "-kb",
             defaultValue = "",
             description = "path to the knowledgbase sin and sout files, just up to the prefix, like InputData/freebase ",
@@ -484,7 +501,7 @@ public class TestExemplar extends Command {
         this.kbPath = kb;
     }
 
-    @CommandInput(parameters = ParametersNumber.TWO,
+    @CommandInput(
             consoleFormat = "-l",
             defaultValue = "0.5",
             description = "lambda used in the scoring function",
@@ -493,7 +510,7 @@ public class TestExemplar extends Command {
         this.lambda = lambda;
     }
 
-    @CommandInput(parameters = ParametersNumber.TWO,
+    @CommandInput(
             consoleFormat = "-qout",
             defaultValue = "related_queries",
             description = "the name of the queries output file",
@@ -513,117 +530,37 @@ public class TestExemplar extends Command {
             consoleFormat = "-lf",
             defaultValue = "",
             mandatory = true,
-            description = "label frequency file formatted as 'labelid frequency'",
-            parameters = ParametersNumber.TWO)
+            description = "label frequency file formatted as 'labelid frequency'")
     public void setLabelFrequencies(String labelFrequencies) {
         this.labelFrequenciesFile = labelFrequencies;
+    }
+
+    @CommandInput(
+            consoleFormat = "-h",
+            defaultValue = "",
+            mandatory = true,
+            description = "node big hubs file")
+    public void setHubs(String hubs) {
+        this.hubs = hubs;
     }
 
     @CommandInput(
             consoleFormat = "-r",
             defaultValue = "10",
             mandatory = false,
-            description = "number of repetitions per test",
-            parameters = ParametersNumber.TWO)
+            description = "number of repetitions per test")
     public void setRepetitions(int repetitions) {
         this.repetitions = repetitions;
 
     }
 
-    private static class JsonRelated {
+    @CommandInput(
+            consoleFormat = "--limit",
+            defaultValue = "false",
+            mandatory = false,
+            description = "limit computation of isomorphism when too many results are found")
+    public void setLimitComputation(boolean doLimit) {
+        this.limitComputation = doLimit;
 
-        private int key;
-        private Map<String, String> query;
-        private Multigraph graph;
-        private Map<Long, String> names;
-        private Collection<RelatedQuery> top_embedded;
-        private Collection<RelatedQuery> top_external;
-        private Collection<RelatedQuery> bottom;
-        private Collection<RelatedQuery> random;
-        private Collection<String> google;
-        private Collection<String> bing;
-
-        public JsonRelated() {
-        }
-
-        public int getKey() {
-            return key;
-        }
-
-        public void setKey(int key) {
-            this.key = key;
-        }
-
-        public Map<String, String> getQuery() {
-            return query;
-        }
-
-        public void setQuery(Map<String, String> query) {
-            this.query = query;
-        }
-
-        public Multigraph getGraph() {
-            return graph;
-        }
-
-        public void setGraph(Multigraph graph) {
-            this.graph = graph;
-        }
-
-        public Collection<String> getGoogle() {
-            return google;
-        }
-
-        public void setGoogle(Collection<String> google) {
-            this.google = google;
-        }
-
-        public Collection<String> getBing() {
-            return bing;
-        }
-
-        public void setBing(Collection<String> bing) {
-            this.bing = bing;
-        }
-
-        public Map<Long, String> getNames() {
-            return names;
-        }
-
-        public void setNames(Map<Long, String> names) {
-            this.names = names;
-        }
-
-        public Collection<RelatedQuery> getTop_embedded() {
-            return top_embedded;
-        }
-
-        public void setTop_embedded(Collection<RelatedQuery> top_embedded) {
-            this.top_embedded = top_embedded;
-        }
-
-        public Collection<RelatedQuery> getTop_external() {
-            return top_external;
-        }
-
-        public void setTop_external(Collection<RelatedQuery> top_external) {
-            this.top_external = top_external;
-        }
-
-        public Collection<RelatedQuery> getBottom() {
-            return bottom;
-        }
-
-        public void setBottom(Collection<RelatedQuery> bottom) {
-            this.bottom = bottom;
-        }
-
-        public Collection<RelatedQuery> getRandom() {
-            return random;
-        }
-
-        public void setRandom(Collection<RelatedQuery> random) {
-            this.random = random;
-        }
     }
 }

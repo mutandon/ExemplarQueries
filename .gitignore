@@ -18,3 +18,7 @@ dist/
 nbdist/
 nbactions.xml
 nb-configuration.xml
+target/
+logs/
+
+dependency-reduced-pom.xml

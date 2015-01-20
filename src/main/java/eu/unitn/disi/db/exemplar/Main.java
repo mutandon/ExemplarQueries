@@ -24,7 +24,9 @@
 
 package eu.unitn.disi.db.exemplar;
 
-import eu.unitn.disi.db.command.CommandRunner;
+import eu.unitn.disi.db.command.global.CommandRunner;
+
+
 
 /**
  *
@@ -32,9 +34,6 @@ import eu.unitn.disi.db.command.CommandRunner;
  */
 public class Main {
     public static void main(String[] args) {
-        if (System.getProperty("COMMANDS") == null) {
-            System.setProperty("COMMANDS", "eu.unitn.disi.db.exemplar.commands");
-        }
         CommandRunner.run(args);
     }
 }

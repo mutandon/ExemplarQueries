@@ -2,8 +2,8 @@
 
 package eu.unitn.disi.db.exemplar.commands;
 
-import eu.unitn.disi.db.command.Command;
 import eu.unitn.disi.db.command.exceptions.ExecutionException;
+import eu.unitn.disi.db.command.global.Command;
 import eu.unitn.disi.db.exemplar.core.WeightedPath;
 import eu.unitn.disi.db.exemplar.core.algorithms.WeightedShortestPath;
 import eu.unitn.disi.db.exemplar.freebase.FreebaseConstants;
@@ -146,7 +146,7 @@ public class ComputeShortestPath extends Command {
         }
         return midLabels;
     }
-    
+
      public static boolean exportGraphToNET(String filename, Multigraph g, String metadata, boolean onlyISA)  {
         boolean result = false;
         TreeMap<Long, Integer> idMap = new TreeMap<Long, Integer>();
@@ -234,31 +234,31 @@ public class ComputeShortestPath extends Command {
         return result;
     }
 
-    
-    
+
+
     @Override
     protected void execute() throws ExecutionException {
         BaseMultigraph graph = new BaseMultigraph();
         try {
             loadGraph("InputData/test.graph", graph);
-            
+
             info("Graph has %d nodes and %d edges", graph.vertexSet().size(), graph.edgeSet().size());
             WeightedShortestPath shortAlgo = new WeightedShortestPath();
 
-            
+
             List<Long> startingNodes = new ArrayList<>();
             startingNodes.add(0L);
             startingNodes.add(3L);
-            
-            Map<Long, Double> edgeLabels = new HashMap<>(); 
+
+            Map<Long, Double> edgeLabels = new HashMap<>();
             for (long i = 0; i < 20; i++) {
                 edgeLabels.put(i, (double)i);
             }
-            
+
             shortAlgo.setSources(startingNodes);
             shortAlgo.setEdgeWeights(edgeLabels);
             shortAlgo.setGraph(graph);
-            
+
             shortAlgo.compute();
             List<WeightedPath> paths = shortAlgo.getShortestPaths();
             for (WeightedPath path : paths) {
