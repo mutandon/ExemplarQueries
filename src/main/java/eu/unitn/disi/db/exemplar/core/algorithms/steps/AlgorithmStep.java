@@ -33,8 +33,8 @@ import java.util.concurrent.Callable;
 
 
 public abstract class AlgorithmStep<T  extends RelatedQuery> extends LoggableObject implements Callable<List<T>>{
-    public static final int MAX_RELATED = 5000;
-    public static final int WARN_TIME = 2000;
+    public static final int MAX_RELATED = 100000; // Warn or break after more than 50K results
+    public static final int WARN_TIME = 30000;  // Warn if computation took more than 30 seconds
 
     protected final Iterator<Long> graphNodes;
     protected final Multigraph query;
@@ -42,14 +42,16 @@ public abstract class AlgorithmStep<T  extends RelatedQuery> extends LoggableObj
     protected final int threadNumber;
     protected final StopWatch watch;
     protected final boolean limitComputation;
+    protected final boolean skipSave;
 
-    public AlgorithmStep(int threadNumber, Iterator<Long> kbConcepts, Multigraph query, Multigraph targetSubgraph, boolean limitComputation) {
+    public AlgorithmStep(int threadNumber, Iterator<Long> kbConcepts, Multigraph query, Multigraph targetSubgraph, boolean limitComputation, boolean skipSave) {
         this.threadNumber = threadNumber;
         this.graphNodes = kbConcepts;
         this.query = query;
         this.graph = targetSubgraph;
         this.limitComputation = limitComputation;
-        
+        this.skipSave = skipSave;
+
         this.watch = new StopWatch(StopWatch.TimeType.CPU);
 
     }

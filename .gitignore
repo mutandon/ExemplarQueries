@@ -22,3 +22,8 @@ target/
 logs/
 
 dependency-reduced-pom.xml
+
+
+## Tmp Files
+src/main/java/eu/unitn/disi/db/exemplar/commands/TestAlgos.java
+StrongSimPy/

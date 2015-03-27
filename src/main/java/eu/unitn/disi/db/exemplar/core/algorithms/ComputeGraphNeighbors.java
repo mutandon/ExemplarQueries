@@ -48,21 +48,21 @@ public class ComputeGraphNeighbors extends Algorithm {
     private Multigraph graph;
     @AlgorithmInput
     private int numThreads;
-    @AlgorithmInput 
-    private Collection<Long> nodeProcessed = null; 
-    
+    @AlgorithmInput
+    private Collection<Long> nodeProcessed = null;
+
     @AlgorithmOutput
-    private NeighborTables neighborTables;    
-    
+    private NeighborTables neighborTables;
+
     private boolean debugThreads = false;
 
     //private int tid;
 
     private class ComputeNodeNeighbors implements Callable<NeighborTables> {
-        private Long[] graphNodes;
-        private int id;
-        private int start;
-        private int end;
+        private final Long[] graphNodes;
+        private final int id;
+        private final int start;
+        private final int end;
 
         public ComputeNodeNeighbors(int id, Long[] graphNodes, int start, int end) {
             this.graphNodes = graphNodes;
@@ -80,12 +80,12 @@ public class ComputeGraphNeighbors extends Algorithm {
             short in;
             Integer countNeighbors;
             Set<Long> visited, toVisit, labels;
-            
+
             Long node;
             Map<Long,Integer> levelTable, lastLevelTable;
             Collection<Edge> inOutEdges;
 
-            
+
             debug("[T%d] Table computation started with %d nodes to process", id, end-start);
             for (int i = start; i < end && i < graphNodes.length; i++) {
                 node = graphNodes[i];
@@ -135,12 +135,12 @@ public class ComputeGraphNeighbors extends Algorithm {
                             }
                             levelTable.put(lbl, countNeighbors + lastLevelTable.get(lbl));
                         }
-                        
-                    }  
+
+                    }
                     lastLevelTable = levelTable;
                     tables.addNodeLevelTable(levelTable, node, l);
                 } //END FOR
-                
+
                 count++;
                 //debug("Processed %d nodes", count);
                 if (debugThreads && count % 1000 == 0) {
@@ -188,7 +188,7 @@ public class ComputeGraphNeighbors extends Algorithm {
                 }
             } else {
                 neighborTables = new ComputeNodeNeighbors(1, graphNodes, 0, graphNodes.length).call();
-            }  
+            }
         } catch (Exception ex) {
             throw new AlgorithmExecutionException("A generic error occurred, complete message follows", ex);
         } finally {

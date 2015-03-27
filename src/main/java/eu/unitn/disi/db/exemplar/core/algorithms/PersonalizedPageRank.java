@@ -192,8 +192,6 @@ public class PersonalizedPageRank extends Algorithm {
         double averageEdgeWeight = 0;
         boolean notEmptyP = true;
 
-        int visitedConc = 0;
-
         //STATS Vars
         StopWatch wa = new StopWatch();
         StopWatch wa1 = new StopWatch();
@@ -225,6 +223,9 @@ public class PersonalizedPageRank extends Algorithm {
             }
             debug("Query particles are %f", queryParticles);
             // Cycles until the iteration vector is empty
+
+
+
             while (notEmptyP) {
 
                 cyclesCount++;
@@ -233,18 +234,16 @@ public class PersonalizedPageRank extends Algorithm {
                 aux = new HashMap<>();
                 //Concepts from the previous iteration
                 concIDs = p.keySet();
-                visitedConc = 0;
+                //visitedConc = 0;
                 //debug("Looping over %d concepts", concIDs.size());
                 for (Long eId : concIDs) {
-                    if (hubs.contains(eId)) {
+                    // We skip the big hubs, but only if they are not part of the query and not the first time
+                    if (hubs.contains(eId) && ( !startingNodes.contains(eId)) || visitedNodes.contains(eId)) {
                         //debug("skipping the topic");
                         continue;
                     }
-                    if (visitedNodes.contains(eId)) {
-                        visitedConc++;
-                    } else {
-                        visitedNodes.add(eId);
-                    }
+                    visitedNodes.add(eId);
+
 
                     //Particles get diminished by the restart probability
                     particles = p.get(eId) * (1 - restartProbability);
@@ -345,7 +344,6 @@ public class PersonalizedPageRank extends Algorithm {
                     wa.reset();
 
                     Integer firstIn = null, firstOut = null;
-                    int edgesConsidered = 0;
                     wa.start();
                     while (particles > threshold) {
                         firstIn = sortedIncoming.peekLast();
@@ -353,7 +351,6 @@ public class PersonalizedPageRank extends Algorithm {
                         if (firstIn == null && firstOut == null) {
                             break;
                         }
-                        edgesConsidered++;
                         if (firstOut == null || (firstIn != null && graphEdgeWeightsIn.get(firstIn) > graphEdgeWeightsOut.get(firstOut))) {
                             frequency = graphEdgeWeightsIn.get(firstIn);
                             long[] edge = incoming[firstIn];
@@ -425,7 +422,7 @@ public class PersonalizedPageRank extends Algorithm {
 
             for (Long eId : sortedNeighbors) {
                 this.visitedNodesCount++;
-                if (personalizedPageRank.get(eId) > this.threshold && !hubs.contains(eId)) {
+                if (personalizedPageRank.get(eId) > this.threshold && (startingNodes.contains(eId) ||  !hubs.contains(eId))) {
                     long[][] incoming = kb.incomingArrayEdgesOf(eId);
                     long[][] outgoing = kb.outgoingArrayEdgesOf(eId);
                     updateGraph(neighborhood, incoming, true, queryLabelWeights.keySet());
@@ -434,14 +431,16 @@ public class PersonalizedPageRank extends Algorithm {
                     //  debug("Skipping " + FreebaseConstants.convertLongToMid(eId));
                 }
                 //Break only if we are sure that we put at least the nodes from query
+                // K limits the size of the neighborhood
                 if(this.k > 0 && this.visitedNodesCount > this.startingNodes.size() && neighborhood.numberOfNodes() > this.k ){
                     break;
                 }
             } //END FOR
+
             wa1.stop();
             //debug("Time here %dms", wa1.getElapsedTimeMillis());
 
-        } catch (Exception ex) {
+        } catch (NullPointerException | IllegalStateException ex) {
             throw new AlgorithmExecutionException(ex);
         }
 

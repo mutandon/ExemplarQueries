@@ -21,13 +21,9 @@ import eu.unitn.disi.db.exemplar.core.algorithms.steps.GraphIsomorphismRecursive
 import eu.unitn.disi.db.command.exceptions.AlgorithmExecutionException;
 import eu.unitn.disi.db.command.util.StopWatch;
 import eu.unitn.disi.db.exemplar.core.RelatedQuery;
-import eu.unitn.disi.db.grava.graphs.BaseMultigraph;
-import eu.unitn.disi.db.grava.graphs.Edge;
 import eu.unitn.disi.db.grava.graphs.Multigraph;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +50,7 @@ public class IsomorphicQuerySearch extends RelatedQuerySearch {
     @Override
     public void compute() throws AlgorithmExecutionException {
         Long startingNode = this.getRootNode(true);
+        debug("Starting node is %s",startingNode );
         if (startingNode == null) {
             throw new AlgorithmExecutionException("no root node has been found, and this is plain WR0NG!");
         }
@@ -80,15 +77,15 @@ public class IsomorphicQuerySearch extends RelatedQuerySearch {
         if (this.getQueryToGraphMap() == null) {
             graphNodes = graph.vertexSet();
         } else {
-            graph = this.pruneGraph();
             graphNodes = ((Map<Long, Set<Long>>) this.getQueryToGraphMap()).get(startingNode);
         }
+
 
         List<RelatedQuery> tmp = null;
 
         //Start in parallel
         ExecutorService pool = Executors.newFixedThreadPool(this.getNumThreads());
-        int chunkSize = (int) Math.round(graphNodes.size() / this.getNumThreads() + 0.5);
+        int chunkSize = this.getNumThreads() == 1 ? graphNodes.size() :  (int) Math.round(graphNodes.size() / this.getNumThreads() + 0.5);
         List<Future<List<RelatedQuery>>> lists = new ArrayList<>();
         ////////////////////// USE 1 THREAD
         //chunkSize =  graphNodes.size();
@@ -116,7 +113,7 @@ public class IsomorphicQuerySearch extends RelatedQuerySearch {
 
         for (List<Long> chunk : nodesChunks) {
             threadNum++;
-            GraphIsomorphismRecursiveStep graphI = new GraphIsomorphismRecursiveStep(threadNum, chunk.iterator(), startingNode, query, graph, this.isLimitedComputation());
+            GraphIsomorphismRecursiveStep graphI = new GraphIsomorphismRecursiveStep(threadNum, chunk.iterator(), startingNode, query, graph, this.isLimitedComputation(), this.getSkipSave());
             lists.add(pool.submit(graphI));
         }
 
@@ -145,63 +142,4 @@ public class IsomorphicQuerySearch extends RelatedQuerySearch {
         watch.stop();
         info("Computed related in %dms", watch.getElapsedTimeMillis());
     }
-
-    /**
-     *
-     * @return a pruned graph exploiting the Query To Graph Map
-     * @throws AlgorithmExecutionException
-     */
-    public Multigraph pruneGraph() throws AlgorithmExecutionException {
-        StopWatch watch = new StopWatch();
-        watch.start();
-
-        Map<Long, Set<Long>> queryToGraphMap = this.getQueryToGraphMap();
-        Multigraph graph = this.getGraph();
-        Multigraph query = this.getQuery();
-
-        Collection<Edge> queryEdges = query.edgeSet();
-        Collection<Edge> graphEdges = graph.edgeSet();
-
-        Set<Long> goodNodes = new HashSet<>();
-
-        Multigraph restricted = new BaseMultigraph(graph.edgeSet().size());
-
-        Long tmpSrc, tmpDst;
-        Edge tmpEdge;
-
-        int removed = 0;
-
-        for (Edge queryEdge : queryEdges) {
-            tmpSrc = queryEdge.getSource();
-            tmpDst = queryEdge.getDestination();
-
-            if (!queryToGraphMap.containsKey(tmpSrc) || queryToGraphMap.get(tmpSrc).isEmpty()) {
-                //TODO Long should be converted to redable
-                throw new AlgorithmExecutionException("Query tables do not contain maps for the node " + tmpSrc);
-            }
-
-            if (!queryToGraphMap.containsKey(tmpDst) || queryToGraphMap.get(tmpDst).isEmpty()) {
-                //TODO Long should be converted
-                throw new AlgorithmExecutionException("Query tables do not contain maps for the node " + tmpDst);
-            }
-
-            goodNodes.addAll(queryToGraphMap.get(tmpSrc));
-            goodNodes.addAll(queryToGraphMap.get(tmpDst));
-        }
-
-        for (Iterator<Edge> it = graphEdges.iterator(); it.hasNext();) {
-            tmpEdge = it.next();
-            if (goodNodes.contains(tmpEdge.getDestination()) && goodNodes.contains(tmpEdge.getSource())) {
-                restricted.addVertex(tmpEdge.getSource());
-                restricted.addVertex(tmpEdge.getDestination());
-                restricted.addEdge(tmpEdge);
-            } else {
-                removed++;
-            }
-        }
-        debug("kept %d, removed %d over %d edges non mapping edges in %dms", restricted.edgeSet().size(), removed, graphEdges.size(), watch.getElapsedTimeMillis());
-
-        return restricted;
-    }
-
 }

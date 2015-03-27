@@ -21,7 +21,9 @@ import eu.unitn.disi.db.command.algorithmic.Algorithm;
 import eu.unitn.disi.db.command.algorithmic.AlgorithmInput;
 import eu.unitn.disi.db.command.algorithmic.AlgorithmOutput;
 import eu.unitn.disi.db.command.exceptions.AlgorithmExecutionException;
+import eu.unitn.disi.db.command.util.StopWatch;
 import eu.unitn.disi.db.grava.exceptions.DataException;
+import eu.unitn.disi.db.grava.graphs.BaseMultigraph;
 import eu.unitn.disi.db.grava.graphs.Edge;
 import eu.unitn.disi.db.grava.graphs.Multigraph;
 import eu.unitn.disi.db.grava.vectorization.NeighborTables;
@@ -29,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -243,6 +246,52 @@ public class PruningAlgorithm extends Algorithm {
         return true;
     }
 
+
+    /**
+     *
+     * @return a pruned graph exploiting the Query To Graph Map
+     * @throws AlgorithmExecutionException
+     */
+    public Multigraph pruneGraph() throws AlgorithmExecutionException {
+        StopWatch watch = new StopWatch();
+        watch.start();
+
+        Collection<Long> queryNodes = query.vertexSet();
+        Collection<Edge> graphEdges = graph.edgeSet();
+
+        Set<Long> goodNodes = new HashSet<>();
+
+        Multigraph restricted = new BaseMultigraph(graph.edgeSet().size());
+
+        Edge tmpEdge;
+        int removed = 0;
+
+        for (Long node : queryNodes) {
+
+            if (!queryGraphMapping.containsKey(node) || queryGraphMapping.get(node).isEmpty()) {
+                //TODO Long should be converted to redable
+                throw new AlgorithmExecutionException("Query tables do not contain maps for the node " + node);
+            }
+
+            goodNodes.addAll(queryGraphMapping.get(node));
+        }
+
+        for (Iterator<Edge> it = graphEdges.iterator(); it.hasNext();) {
+            tmpEdge = it.next();
+            if (goodNodes.contains(tmpEdge.getDestination()) && goodNodes.contains(tmpEdge.getSource())) {
+                restricted.addVertex(tmpEdge.getSource());
+                restricted.addVertex(tmpEdge.getDestination());
+                restricted.addEdge(tmpEdge);
+            } else {
+                removed++;
+            }
+        }
+        debug("kept %d, removed %d over %d edges non mapping edges in %dms", restricted.edgeSet().size(), removed, graphEdges.size(), watch.getElapsedTimeMillis());
+
+        return restricted;
+    }
+
+
     public void setQuery(Multigraph query) {
         this.query = query;
     }
@@ -275,6 +324,11 @@ public class PruningAlgorithm extends Algorithm {
         return isBinary;
     }
 
+    /**
+     * When Binary is set to true the tables will be used to check for presence of arcs but not number of archs
+     * this is used for simulation instead of isomorphism
+     * @param isBinary
+     */
     public void setBinary(boolean isBinary) {
         this.isBinary = isBinary;
     }

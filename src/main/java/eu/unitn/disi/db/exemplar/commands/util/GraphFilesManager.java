@@ -15,7 +15,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
-package eu.unitn.disi.db.exemplar.stats;
+package eu.unitn.disi.db.exemplar.commands.util;
 
 import eu.unitn.disi.db.command.util.LoggableObject;
 import eu.unitn.disi.db.exemplar.exceptions.LoadException;
@@ -369,6 +369,119 @@ public final class GraphFilesManager extends LoggableObject {
                             .append((edge.getLabel() == FreebaseConstants.ISA_ID ? "1" : "10") + "\n");
                 }
             }
+
+            result = true;
+        } catch (IOException ex) {
+            throw new LoadException("Cannot write file %s", filename, ex);
+        } finally {
+            Utilities.close(bw);
+        }
+
+        return result;
+    }
+
+
+    public static boolean exportGraphToVIZ(String filename, Multigraph g, String metadata, boolean onlyISA) throws LoadException {
+        return exportGraphToVIZ(filename, g, metadata, onlyISA, null, null);
+    }
+
+
+    public static boolean exportGraphToVIZ(String filename, Multigraph g, String metadata, boolean onlyISA, String postfix, Collection<Long> queryNodes) throws LoadException {
+        boolean result = false;
+        TreeMap<Long, String> idMap = new TreeMap<>();
+        HashMap<Long, String> midLabels = null;
+        // IF WE HAD TO MAP EDGE IDs TO EDGE LABELS
+//        try{
+//            midLabels = getMidLabels(filename);
+//        } catch ( ParseException | LoadException e) {
+//            throw new IllegalStateException("IS not possible to map edges IDs to lables", e);
+//        }
+
+        if (g == null) {
+            throw new LoadException("Graph cannot be null");
+        }
+
+        if (onlyISA) {
+            filename += ".isA";
+        }
+        if(postfix!=null && !postfix.isEmpty()){
+            filename += "."+postfix;
+        }
+        filename += ".dot";
+
+        BufferedWriter bw = null;
+        Collection<Long> verteces = g.vertexSet();
+        Collection<Edge> outEdges = g.edgeSet();
+
+        if((verteces.size() + outEdges.size())/2 > VIZ_MAX_EXPORTABLE_DIMENSION ){
+            throw new LoadException("Graph too big to be exported in this format");
+        }
+
+        boolean addVertex = false;
+        for (Long c : verteces) {
+            addVertex = false;
+            //If we export only isA,
+            //then we will add just nodes that are connected through them
+            if (onlyISA) {
+                Collection<Edge> edges = g.incomingEdgesOf(c);
+                edges.addAll(g.outgoingEdgesOf(c));
+                for (Edge edge : edges) {
+                    if (edge.getLabel().equals(FreebaseConstants.ISA_ID)) {
+                        addVertex = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!onlyISA || addVertex) {
+                String name = ""+c;
+                try{
+                    name =  FreebaseConstants.convertLongToMid(c);
+                } catch(StringIndexOutOfBoundsException e){
+
+                }
+                idMap.put(c, name);
+            }
+        }
+
+
+        try {
+            bw = new BufferedWriter(new FileWriter(filename));
+
+            bw.append("digraph knowledge_base {");
+            //Append metadata
+            if (metadata != null) {
+                bw.append("/* META:" + metadata).append("*/\n");
+            }
+
+            bw.append("layout=\"circo\";\n\n");
+            //bw.append("nodestep = 200;");
+
+            if(queryNodes!=null){
+                for (Long l : queryNodes) {
+                    bw.append("\"" + idMap.get(l) + "\" [style=\"filled\", fillcolor=\"green\"];\n");
+                }
+            }
+            String edgeLabel;
+            //"Super Mario Universe" -> "Shigeru Miyamoto" [ label = "fictional_universe/created_by" ];
+            for (Edge edge : outEdges) {
+                if (!onlyISA || idMap.containsKey(edge.getSource())) {
+                    edgeLabel = midLabels != null ? midLabels.get(edge.getLabel()) : edge.getLabel()+"";
+                    edgeLabel= edgeLabel!= null ? edgeLabel :edge.getLabel()+"" ;
+
+                    if(!edgeLabel.equals(FreebaseConstants.ISA) ) {
+                        int i = edgeLabel.lastIndexOf('/');
+                        edgeLabel = edgeLabel.substring(i+1);
+                    }
+
+                    bw.append("\"" + idMap.get(edge.getSource()) + "\" ")
+                            .append(" -> ")
+                            .append("\"" +idMap.get(edge.getDestination()) + "\" ")
+                            .append("[ label = \""+ edgeLabel + "\" ];\n");
+                }
+            }
+
+            bw.append("}\n");
 
             result = true;
         } catch (IOException ex) {

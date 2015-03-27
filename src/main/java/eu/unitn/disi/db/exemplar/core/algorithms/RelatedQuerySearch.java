@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 /**
  * This class generalizes the steps needed to search for related queries
@@ -49,14 +50,17 @@ public abstract class RelatedQuerySearch extends Algorithm {
     private Multigraph graph;
 
     @AlgorithmInput
-    private Map<Long, Set<Long>> queryToGraphMap;
-
-    @AlgorithmInput
     private int numThreads = DEFAULT_NUMBER_OF_THREADS;
 
     @AlgorithmInput
     private boolean limitedComputation = false;
 
+    @AlgorithmInput
+    private boolean skipSave = false;
+
+
+    @AlgorithmInput
+    private Map<Long, Set<Long>> queryToGraphMap;
 
     @AlgorithmOutput
     private List<RelatedQuery> relatedQueries;
@@ -100,23 +104,6 @@ public abstract class RelatedQuerySearch extends Algorithm {
      */
     public void setGraph(Multigraph graph) {
         this.graph = graph;
-    }
-
-
-    /**
-     *
-     * @return the map for the pruning
-     */
-    public Map<Long, Set<Long>> getQueryToGraphMap() {
-        return queryToGraphMap;
-    }
-
-    /**
-     *
-     * @param queryGraphMap the map to use for the pruning
-     */
-    public void setQueryToGraphMap(Map<Long, Set<Long>> queryGraphMap) {
-        this.queryToGraphMap = queryGraphMap;
     }
 
     /**
@@ -267,14 +254,19 @@ public abstract class RelatedQuerySearch extends Algorithm {
             edgeLabels.add(l.getLabel());
         }
 
-        Long bestLabel;
-        if(minimumFrquency) {
-         bestLabel =this.findLessFrequentLabel(edgeLabels);
-        } else {
-         bestLabel =this.findMostFrequentLabel(edgeLabels);
+        Long bestLabel = 0L;
+
+        for( Edge e : this.query.edgeSet()){
+            bestLabel = e.getLabel() > bestLabel ? e.getLabel() : bestLabel;
         }
 
-        if(bestLabel == null){
+//        if(minimumFrquency) {
+//         bestLabel =this.findLessFrequentLabel(edgeLabels);
+//        } else {
+//         bestLabel =this.findMostFrequentLabel(edgeLabels);
+//        }
+
+        if(bestLabel == null || bestLabel == 0L ){
             throw new AlgorithmExecutionException("Best Label not found when looking for a root node!");
         }
 
@@ -322,5 +314,38 @@ public abstract class RelatedQuerySearch extends Algorithm {
         return MIN_SIMILARITY + 0.1;
     }
 
+
+
+    /**
+     *
+     * @return the map for the pruning
+     */
+    public Map<Long, Set<Long>> getQueryToGraphMap() {
+        return queryToGraphMap;
+    }
+
+    /**
+     *
+     * @param queryGraphMap the map to use for the pruning
+     */
+    public void setQueryToGraphMap(Map<Long, Set<Long>> queryGraphMap) {
+        this.queryToGraphMap = queryGraphMap;
+    }
+
+    /**
+     *
+     * @param skipSave
+     */
+    public void setSkipSave(boolean skipSave) {
+        this.skipSave = skipSave;
+    }
+
+    /**
+     *
+     * @return
+     */
+    public boolean getSkipSave() {
+        return this.skipSave;
+    }
 
 }

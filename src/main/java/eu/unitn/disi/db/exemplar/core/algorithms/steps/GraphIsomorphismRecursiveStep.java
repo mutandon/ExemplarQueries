@@ -37,8 +37,8 @@ public class GraphIsomorphismRecursiveStep extends AlgorithmStep<RelatedQuery> {
 
     private final Long queryConcept;
 
-    public GraphIsomorphismRecursiveStep(int threadNumber, Iterator<Long> kbConcepts, Long queryConcept, Multigraph query, Multigraph targetSubgraph, boolean limitComputation) {
-        super(threadNumber,kbConcepts,query, targetSubgraph, limitComputation);
+    public GraphIsomorphismRecursiveStep(int threadNumber, Iterator<Long> kbConcepts, Long queryConcept, Multigraph query, Multigraph targetSubgraph, boolean limitComputation, boolean skipSave) {
+        super(threadNumber,kbConcepts,query, targetSubgraph, limitComputation, skipSave);
         this.queryConcept = queryConcept;
     }
 
@@ -48,9 +48,11 @@ public class GraphIsomorphismRecursiveStep extends AlgorithmStep<RelatedQuery> {
         List<IsomorphicQuery> relatedQueriesPartial = new LinkedList<>();
         Set<RelatedQuery> relatedQueries = new HashSet<>();
 
+        boolean warned = false;
+        watch.start();
         while (graphNodes.hasNext()) {
             Long node = graphNodes.next();
-            watch.start();
+
             try {
                 relatedQuery = new IsomorphicQuery(query);
                 //Map the first node
@@ -58,11 +60,15 @@ public class GraphIsomorphismRecursiveStep extends AlgorithmStep<RelatedQuery> {
 
                 relatedQueriesPartial = createQueries(query, queryConcept, node, relatedQuery);
                 if (relatedQueriesPartial != null) {
+                    if(skipSave){
+                        continue;
+                    }
                     relatedQueries.addAll(relatedQueriesPartial);
-
-                    if (relatedQueries.size() > MAX_RELATED) {
+                    if (!warned && watch.getElapsedTimeMillis() > WARN_TIME && relatedQueries.size() > MAX_RELATED) {
                         warn("More than " + MAX_RELATED + " partial isomorphic results");
+                        warned = true;
                         if (limitComputation) {
+                            warn("Computation interrupted after " + relatedQueries.size() + " partial isomorphic results");
                             break;
                         }
                     }
@@ -72,15 +78,15 @@ public class GraphIsomorphismRecursiveStep extends AlgorithmStep<RelatedQuery> {
                     relatedQueriesPartial.clear();
                 }
                 error("Memory exausted, so we are returning something but not everything.");
-                System.gc();
+                //System.gc();
                 return new LinkedList<>(relatedQueries);
             }
-            watch.stop();
-            if (watch.getElapsedTimeMillis() > WARN_TIME) {
-                info("Computation %d [%d] took %d ms", threadNumber, Thread.currentThread().getId(), watch.getElapsedTimeMillis());
-            }
-            watch.reset();
+
+            //if (watch.getElapsedTimeMillis() > WARN_TIME) {
+            //    info("Computation %d [%d] took %d ms", threadNumber, Thread.currentThread().getId(), watch.getElapsedTimeMillis());
+            //}
         }
+        watch.stop();
 
         return new LinkedList<>(relatedQueries);
     }

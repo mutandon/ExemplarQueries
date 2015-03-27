@@ -29,15 +29,17 @@ import eu.unitn.disi.db.command.exceptions.AlgorithmExecutionException;
 import eu.unitn.disi.db.command.exceptions.ExecutionException;
 import eu.unitn.disi.db.command.global.Command;
 import eu.unitn.disi.db.command.util.StopWatch;
+import eu.unitn.disi.db.command.util.stats.Statistics;
+import eu.unitn.disi.db.command.util.stats.StatisticsCSVExporter;
 import eu.unitn.disi.db.exemplar.core.VectorSimilarities;
 import eu.unitn.disi.db.exemplar.core.algorithms.ComputeGraphNeighbors;
 import eu.unitn.disi.db.exemplar.core.algorithms.PersonalizedPageRank;
 import eu.unitn.disi.db.exemplar.core.algorithms.PruningAlgorithm;
 import eu.unitn.disi.db.exemplar.core.RelatedQuery;
 import eu.unitn.disi.db.exemplar.core.algorithms.IsomorphicQuerySearch;
-import eu.unitn.disi.db.exemplar.core.algorithms.RelatedQuerySearch;
 import eu.unitn.disi.db.exemplar.exceptions.LoadException;
-import eu.unitn.disi.db.exemplar.stats.GraphFilesManager;
+import eu.unitn.disi.db.exemplar.freebase.FreebaseConstants;
+import eu.unitn.disi.db.exemplar.commands.util.GraphFilesManager;
 import eu.unitn.disi.db.grava.exceptions.ParseException;
 import eu.unitn.disi.db.grava.graphs.BaseMultigraph;
 import eu.unitn.disi.db.grava.graphs.BigMultigraph;
@@ -48,12 +50,15 @@ import eu.unitn.disi.db.grava.vectorization.NeighborTables;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -63,44 +68,56 @@ import java.util.TreeSet;
  */
 public class TestExemplar extends Command {
 
-    private static final int NUM_CORES = 8;
-    private BigMultigraph graph;
-    private String query;
-    private String hubs;
-    private int neighborSize;
-    private int topK;
-    private int repetitions;
-    private double threshold;
-    private double restartProb;
-    private double lambda;
-    private boolean skipPruning;
-    private boolean skipNeighborhood;
-    private boolean limitComputation;
-    private String labelFrequenciesFile;
-    private String kbPath;
-    private int k;
-    private String queriesOut;
+    protected BigMultigraph graph;
+    protected String query;
+    protected String hubsFile;
+    protected int neighborSize;
+    protected int topK;
+    protected int repetitions;
+    protected double threshold;
+    protected double restartProb;
+    protected double lambda;
+    protected boolean skipPruning;
+    protected boolean skipNeighborhood;
+    protected boolean limitComputation;
+    protected boolean skipSave;
+    protected String labelFrequenciesFile;
+    protected String kbPath;
+    protected int k;
+    protected String queriesOut;
+    protected Set<Long> bighubs;
+    protected HashMap<Long, Double> informativeness;
+    protected int cores;
 
-    private HashMap<Long, Double> informativeness;
+    public static final int TABLE_CORES = 12;
 
+    /**
+     *
+     */
+    public abstract static class Cols {
+
+
+
+        /**
+         * "QueryName"
+         */
+        public static final String QUERY = "QueryName";
+        public static final String NSIZE_E = "Neighborhood Edges";
+        public static final String NSIZE_V = "Neighborhood Vertex";
+        public static final String PSIZE_E = "PrunedSize Edges";
+        public static final String PSIZE_V = "PrunedSize Vertex";
+        public static final String SOLUTIONS = "Num of Solution";
+        public static final String NTIME = "Neighborhood Time";
+        public static final String TTIME = "Table Time";
+        public static final String PTIME = "Pruning Time";
+        public static final String STIME = "SearchTime";
+
+    }
 
     @Override
     protected void execute() throws ExecutionException {
-        StopWatch watch;
+        StopWatch globalWatch;
         List<String> files = new ArrayList<>();
-        PersonalizedPageRank ppv;
-        Multigraph neighborhood = null;
-        Multigraph queryGraph;
-        Map<Long, Set<Long>> queryGraphMap;
-        List<RelatedQuery> relatedQueries;
-        ComputeGraphNeighbors tableAlgorithm;
-        PruningAlgorithm pruningAlgorithm;
-        NeighborTables graphTables = null, queryTables = null;
-        List<Long> nodes;
-        int count = 0;
-        Map<Long, String> nodeNames;
-        Set<Long> bighubs;
-        StringBuilder sb;
 
         File queriesOutDir = new File(queriesOut);
         if (!queriesOutDir.exists() || !queriesOutDir.isDirectory()) {
@@ -110,36 +127,27 @@ public class TestExemplar extends Command {
         }
 
         try {
-            watch = new StopWatch();
+            globalWatch = new StopWatch();
+            Statistics stat;
 
-            String tmp;
-            File dir = new File(this.query);
-            if (dir.isDirectory()) {
-                debug("Loading graph from directory " + dir.getAbsolutePath());
+            // Agregate statistics fo this complete Run
+            Statistics aggStat = new Statistics();
+            aggStat.addStringField(Cols.QUERY);
+            aggStat.addNumericField(Cols.NSIZE_E);
+            aggStat.addNumericField(Cols.NSIZE_V);
+            aggStat.addNumericField(Cols.PSIZE_E);
+            aggStat.addNumericField(Cols.PSIZE_V);
+            aggStat.addNumericField(Cols.SOLUTIONS);
+            aggStat.addNumericField(Cols.NTIME);
+            aggStat.addNumericField(Cols.TTIME);
+            aggStat.addNumericField(Cols.PTIME);
+            aggStat.addNumericField(Cols.STIME);
 
-                File[] childFiles = dir.listFiles(new FileFilter() {
-                    @Override
-                    public boolean accept(File child) {
-                        return !child.isDirectory() && child.getName().endsWith(".query");
-                    }
-                });
+            // Load Stuff from Files
+            files = loadQueryFiles(this.query);
 
-                for (File child : childFiles) {
-                    tmp = child.getAbsolutePath();
-                    try {
-                        debug("Adding graph: " + child.getAbsolutePath());
-                        queryGraph = GraphFilesManager.loadGraph(tmp);
-                        files.add(tmp);
-                    } catch (ParseException | LoadException e) {
-                        error("Query %s is not parsable! ", tmp);
-                        //e.printStackTrace();
-                    }
-                }
-            } else {
-                debug("Adding single graph: " + dir.getAbsolutePath());
-                files.add(dir.getCanonicalPath());
-            }
             informativeness = new HashMap<>();
+            info("Loading label frequenies from %s", labelFrequenciesFile);
             Utilities.readFileIntoMap(labelFrequenciesFile, " ", informativeness, Long.class, Double.class);
 
             double frequencies = 0.0;
@@ -148,8 +156,8 @@ public class TestExemplar extends Command {
             }
 
             bighubs = new HashSet<>();
-            if (hubs != null && !hubs.isEmpty()) {
-                Utilities.readFileIntoCollection(hubs, bighubs, Long.class);
+            if (hubsFile != null && !hubsFile.isEmpty()) {
+                Utilities.readFileIntoCollection(hubsFile, bighubs, Long.class);
             }
 
 
@@ -160,7 +168,7 @@ public class TestExemplar extends Command {
                 informativeness.put(label, labelPrior);
             }
 
-            watch.start();
+            globalWatch.start();
             if (graph == null) {
                 graph = new BigMultigraph(this.kbPath + "-sin.graph", this.kbPath + "-sout.graph"/*, knowledgebaseFileSize*/);
                 info("Loaded graph from file-path %s", this.kbPath);
@@ -170,224 +178,412 @@ public class TestExemplar extends Command {
             }
 
 
-            info("Loaded freebase into main-memory in %dms", watch.getElapsedTimeMillis());
+            info("Loaded freebase into main-memory in %dms", globalWatch.getElapsedTimeMillis());
+            //CLEANS
+            debug("GC");
+            System.gc();
+            debug("GC Done");
 
-            watch.reset();
-
+            // Iterate through files
+            int fileProgress = 0;
+            globalWatch.reset();
             if (!files.isEmpty()) {
+                // .. Each file is a query
                 for (String queryFile : files) {
-                    Long id, mostPopularNode = 0L;
-                    long n1;
-                    int a = 0;
-                    double max = 0, min = Double.MAX_VALUE, value;
+                    // ALGOS
+                    PersonalizedPageRank ppv = new PersonalizedPageRank(graph);
+                    ComputeGraphNeighbors tableAlgorithm = new ComputeGraphNeighbors();
+                    PruningAlgorithm pruningAlgorithm = new PruningAlgorithm();
 
-                    TreeSet<RelatedQuery> orderedQueries = new TreeSet<>();
-                    Map<Long, Double> queryLabelWeights;
-                    Map<Long, Double> popularities;
-                    HashSet<RelatedQuery> relatedQueriesUnique;
-                    Set<Long> keys;
-                    Collection<Long> startingNodes = new HashSet<>();
+                    //DATA
+                    Multigraph queryGraph;
+                    Collection<Long> neighbourStartingNodes = new HashSet<>();
+                    Collection<Long> queryEdgeLabels = new HashSet<>();
+                    NeighborTables graphTables = null, queryTables = null;
 
-                    count++;
-                    queryGraphMap = null;
+                    //VARIABLES
+                    boolean processError = false; // This is set to true if prunign goes south
 
-                    watch.reset();
+                    // Prepare Single query Stats
+                    stat = new Statistics();
+                    stat.addStringField(Cols.QUERY);
+                    stat.addNumericField(Cols.NSIZE_E);
+                    stat.addNumericField(Cols.NSIZE_V);
+                    stat.addNumericField(Cols.PSIZE_E);
+                    stat.addNumericField(Cols.PSIZE_V);
+                    stat.addNumericField(Cols.SOLUTIONS);
+                    stat.addNumericField(Cols.NTIME);
+                    stat.addNumericField(Cols.TTIME);
+                    stat.addNumericField(Cols.PTIME);
+                    stat.addNumericField(Cols.STIME);
+
+
+                    //1: TRY TO PARSE THE GRAPH
                     debug("Now loading : " + queryFile);
                     queryGraph = GraphFilesManager.loadGraph(queryFile);
 
-                    nodeNames = new HashMap<>();
-                    sb = new StringBuilder();
-                    //1: LOAD THE GRAPH
-                    for (int i = 0; i < repetitions; i++) {
-                        queryLabelWeights = new HashMap<>();
-                        debug("Repetition %d", i);
+                    if(!isQueryMappable(queryGraph)){
+                        stat.addStringValue(Cols.QUERY, "ERROR");
+                        stat.addNumericValue(Cols.NSIZE_E, -1);
+                        stat.addNumericValue(Cols.NSIZE_V, -1);
+                        stat.addNumericValue(Cols.PSIZE_E, -1);
+                        stat.addNumericValue(Cols.PSIZE_V, -1);
+                        stat.addNumericValue(Cols.SOLUTIONS, -1);
+                        stat.addNumericValue(Cols.NTIME, -1);
+                        stat.addNumericValue(Cols.TTIME, -1);
+                        stat.addNumericValue(Cols.PTIME, -1);
+                        stat.addNumericValue(Cols.STIME, -1);
 
-                        //2: COMPUTE INITIAL PARTICLES
-                        for (Edge edge : queryGraph.edgeSet()) {
-                            queryLabelWeights.put(edge.getLabel(), informativeness.get(edge.getLabel()));
+                        StatisticsCSVExporter xp = new StatisticsCSVExporter(stat);
+                        Path p = Paths.get(this.queriesOut +  "/" +(new File(queryFile)).getName() + ".stats.csv");
+                        xp.write(p);
+
+                        continue; // unmmappable skip!
+                    }
+
+                    // The nodes from which we start neighrborhood exploration
+                    for (Long conc : queryGraph.vertexSet()) {
+                        neighbourStartingNodes.add(conc);
+                    }
+
+                    // The edge labels for priortizing exploration
+                    for (Edge edge : queryGraph.edgeSet()) {
+                        queryEdgeLabels.add(edge.getLabel());
+                    }
+
+                    //debug("Time to load query %s: %dms and find it in the graph", queryFile, globalWatch.getElapsedTimeMillis());
+
+                    // Multiple Iterations for the same query
+                    for (int experimentIterations = 0; experimentIterations < repetitions; experimentIterations++) {
+                        debug("Repetition %d", experimentIterations);
+                        if(processError){
+                            error("Skipping iteration, pruning has gone wrong");
+                            break;
                         }
-                        //Assign initial particles to nodes in the query
-                        double nodeParticles = 0, queryParticles = 0, maxNodeParticles = 0;
-                        for (Long conc : queryGraph.vertexSet()) {
-                            id = conc;
-                            startingNodes.add(id);
-                            nodeParticles = (1 / (double) queryGraph.vertexSet().size()) / (this.threshold);
-                            queryParticles += nodeParticles;
-                            if (nodeParticles > maxNodeParticles) {
-                                mostPopularNode = id;
+
+
+
+                        try {
+                            StopWatch watch = new StopWatch();
+
+                            Multigraph neighborhood = null;
+                            Multigraph restrictedNeighborhood = null;
+
+                            stat.addStringValue(Cols.QUERY, queryFile);
+                            Map<Long, Set<Long>> queryGraphMap = null;
+
+
+                            watch.start();
+                            //2. PRUNE THE SPACE
+                            //2.1: APPV COMPUTE POPULARITIES
+                            watch.reset();
+                            if (!skipNeighborhood) {
+
+                                ppv.setStartingNodes(neighbourStartingNodes);
+                                ppv.setThreshold(threshold);
+                                ppv.setRestartProbability(restartProb);
+                                ppv.setK(this.neighborSize);
+                                ppv.setLabelFrequencies(informativeness);
+                                ppv.setPriorityEdges(queryEdgeLabels);
+                                ppv.setKeepOnlyQueryEdges(true);
+                                ppv.setHubs(bighubs);
+                                ppv.compute();
+                                neighborhood = ppv.getNeighborhood();
+
+                                debug("Time to get the most important neighbors: %dms", watch.getElapsedTimeMillis());
+                                stat.addNumericValue(Cols.NTIME,watch.getElapsedTimeMillis());
+
+                                debug("Neighbors contains %d edges and %d vertexes", neighborhood.edgeSet().size(), neighborhood.vertexSet().size());
+                                stat.addNumericValue(Cols.NSIZE_E, neighborhood.edgeSet().size());
+                                stat.addNumericValue(Cols.NSIZE_V, neighborhood.numberOfNodes());
+
+
+                            } else {
+                                debug("Skipping neighborhood!");
+                                neighborhood = new BaseMultigraph();
+
+                                debug("Time to get the most important neighbors: %dms", watch.getElapsedTimeMillis());
+                                debug("NaiveNeighbors contains %d edges and %d vertexes", neighborhood.edgeSet().size(), neighborhood.vertexSet().size());
+                                stat.addNumericValue(Cols.NTIME,-1);
+                                stat.addNumericValue(Cols.NSIZE_E, -1);
+                                stat.addNumericValue(Cols.NSIZE_V, -1);
+
                             }
-                            maxNodeParticles = maxNodeParticles < nodeParticles ? nodeParticles : maxNodeParticles;
-                        }
 
-                        debug("Time to load query %s: %dms", queryFile, watch.getElapsedTimeMillis());
+                            //2.3: TABLE PRUNING
+                            if (!skipPruning) {
+                                //Find related
 
-                        //3: COMPUTE POPULARITIES
-                        watch.reset();
-                        if (!skipNeighborhood) {
-                            ppv = new PersonalizedPageRank(graph);
-                            ppv.setStartingNodes(startingNodes);
-                            ppv.setThreshold(threshold);
-                            ppv.setRestartProbability(restartProb);
-                            ppv.setK(this.neighborSize);
-                            ppv.setLabelFrequencies(informativeness);
-                            ppv.setPriorityEdges(queryLabelWeights.keySet());
-                            ppv.setKeepOnlyQueryEdges(true);
-                            ppv.setHubs(bighubs);
-                            ppv.compute();
-                            neighborhood = ppv.getNeighborhood();
+                                //2.4: COMPUTE TABLES
+                                if (graphTables == null || queryTables == null ) {
+                                    debug("Computing %d-neighbors tables", k);
+                                    watch.reset();
+                                    tableAlgorithm.setK(k);
+                                    tableAlgorithm.setNumThreads(TABLE_CORES);
+                                    tableAlgorithm.setGraph(neighborhood);
+                                    tableAlgorithm.compute();
+                                    graphTables = tableAlgorithm.getNeighborTables();
+                                    tableAlgorithm.setGraph(queryGraph);
+                                    tableAlgorithm.compute();
+                                    queryTables = tableAlgorithm.getNeighborTables();
+                                    debug("Time to compute the graph and query tables: %dms", watch.getElapsedTimeMillis());
+                                    stat.addNumericValue(Cols.TTIME,watch.getElapsedTimeMillis());
+                                } else {
+                                    stat.addNumericValue(Cols.TTIME,0);
+                                }
 
-                            debug("Time to get the most important neighbors: %dms", watch.getElapsedTimeMillis());
-                            debug("Neighbors contains %d edges and %d vertexes", neighborhood.edgeSet().size(), neighborhood.vertexSet().size());
-                            popularities = new HashMap(ppv.getPopularity());
-                        } else {
-                            debug("Skipping neighborhood!");
-                            neighborhood = new BaseMultigraph();
 
-                            debug("Time to get the most important neighbors: %dms", watch.getElapsedTimeMillis());
-                            debug("NaiveNeighbors contains %d edges and %d vertexes", neighborhood.edgeSet().size(), neighborhood.vertexSet().size());
-                            popularities = new HashMap();
-                        }
-                        if (!skipPruning) {
-                            //Find related
-                            if (i == 0) {
-                                //4: COMPUTE TABLES
-                                debug("Computing %d-neighbors tables", k);
+                                //2.5: COMPUTE SIMULATION MAPPING
+                                debug("Pruning with %d-neighbors tables", k);
                                 watch.reset();
-                                tableAlgorithm = new ComputeGraphNeighbors();
-                                tableAlgorithm.setK(k);
-                                tableAlgorithm.setNumThreads(NUM_CORES);
+                                pruningAlgorithm.setGraph(neighborhood);
+                                pruningAlgorithm.setQuery(queryGraph);
+                                pruningAlgorithm.setGraphTables(graphTables);
+                                pruningAlgorithm.setQueryTables(queryTables);
+                                pruningAlgorithm.compute();
+                                queryGraphMap = pruningAlgorithm.getQueryGraphMapping();
+
+                                // CHECK WHETHER PRUNING WAS CORRECT
+                                for (Long node : neighbourStartingNodes) {
+                                    if (!queryGraphMap.containsKey(node) || queryGraphMap.get(node).isEmpty()) {
+                                        error("Query tables do not contain maps for the node " + FreebaseConstants.convertLongToMid(node));
+                                        stat.addNumericValue(Cols.PTIME,watch.getElapsedTimeMillis());
+                                        stat.addNumericValue(Cols.PSIZE_E,-1);
+                                        stat.addNumericValue(Cols.PSIZE_V, -1);
+                                        stat.addNumericValue(Cols.STIME, 0);
+                                        stat.addNumericValue(Cols.SOLUTIONS, -1);
+                                        throw new AlgorithmExecutionException("Error while Pruning: nodes not mapped ");
+                                    }
+                                }
+
+                                //2.6 PRUNE THE SPACE
+                                restrictedNeighborhood = pruningAlgorithm.pruneGraph();
+                                debug("Time to compute the graph mapping and prune the graph: %dms, found", watch.getElapsedTimeMillis());
+                                stat.addNumericValue(Cols.PTIME,watch.getElapsedTimeMillis());
+                                stat.addNumericValue(Cols.PSIZE_E,restrictedNeighborhood.edgeSet().size());
+                                stat.addNumericValue(Cols.PSIZE_V, restrictedNeighborhood.numberOfNodes());
+
+                            } else {
+                                stat.addNumericValue(Cols.TTIME,-1);
+                                stat.addNumericValue(Cols.PTIME,-1);
+                                stat.addNumericValue(Cols.PSIZE_V,-1);
+                                stat.addNumericValue(Cols.PSIZE_E,-1);
+                            }
+
+                            //3: SEARCH RELATED QUERIES
+                            watch.reset();
+                            HashSet<RelatedQuery> relatedQueriesUnique;
+                            List<RelatedQuery> relatedQueries;
+
+                            IsomorphicQuerySearch isoAlgorithm = new IsomorphicQuerySearch();
+
+                            isoAlgorithm.setQuery(queryGraph);
+                            isoAlgorithm.setGraph( skipPruning ? neighborhood : restrictedNeighborhood);
+                            isoAlgorithm.setNumThreads(this.cores);
+                            isoAlgorithm.setQueryToGraphMap(pruningAlgorithm.getQueryGraphMapping());
+                            isoAlgorithm.setLimitedComputation(limitComputation);
+                            isoAlgorithm.compute();
+
+                            relatedQueries = isoAlgorithm.getRelatedQueries();
+                            stat.addNumericValue(Cols.STIME, watch.getElapsedTimeMillis());
+
+                            relatedQueriesUnique = new HashSet<>(relatedQueries);
+                            stat.addNumericValue(Cols.SOLUTIONS, relatedQueriesUnique.size());
+                            debug("Found %d related queries of which uniques are %d", relatedQueries.size(), relatedQueriesUnique.size());
+
+
+                            //4: RANK QUERIES
+                            if (experimentIterations == 0 && topK > 0) {
+                                int a = 0;
+                                double max = 0, min = Double.MAX_VALUE, value;
+                                double pop = 0, similarity = 0;
+
+                                TreeSet<RelatedQuery> orderedQueriesIntersect = new TreeSet<>();
+                                TreeSet<RelatedQuery> orderedQueriesNoIntersect = new TreeSet<>();
+
+                                info("Ordering related queries");
+
+                                watch.reset();
+                                info("Recompute Neighborhood and vectors for ranking");
+                                ppv.setKeepOnlyQueryEdges(false);
+                                ppv.compute();
+                                neighborhood = ppv.getNeighborhood();
+                                debug("Computing %d-neighbors tables", k);
                                 tableAlgorithm.setGraph(neighborhood);
                                 tableAlgorithm.compute();
-                                graphTables = tableAlgorithm.getNeighborTables();
-                                tableAlgorithm.setGraph(queryGraph);
-                                tableAlgorithm.compute();
-                                queryTables = tableAlgorithm.getNeighborTables();
-                                debug("Time to compute the graph and query tables: %dms", watch.getElapsedTimeMillis());
-                            }
+                                NeighborTables tempGraphTables = tableAlgorithm.getNeighborTables();
+                                info("Recomputed Neighborhood and vectors for ranking in %dms", watch.getElapsedTimeMillis());
+                                //Normalize popularities
+                                Map<Long, Double> popularities = new HashMap(ppv.getPopularity());
+                                Set<Long> keys = popularities.keySet();
 
-                            //5: PRUNE THE SPACE
-                            debug("Pruning with %d-neighbors tables", k);
-                            watch.reset();
-                            pruningAlgorithm = new PruningAlgorithm();
-                            pruningAlgorithm.setGraph(neighborhood);
-                            pruningAlgorithm.setQuery(queryGraph);
-                            pruningAlgorithm.setGraphTables(graphTables);
-                            pruningAlgorithm.setQueryTables(queryTables);
-                            pruningAlgorithm.compute();
-                            queryGraphMap = pruningAlgorithm.getQueryGraphMapping();
-                            debug("Time to compute the graph mapping: %dms, found", watch.getElapsedTimeMillis());
-                        }
-
-                        //7: COMPUTE RELATED QUERIES
-                        watch.reset();
-                        RelatedQuerySearch isoAlgorithm = new IsomorphicQuerySearch();
-                        isoAlgorithm.setQuery(queryGraph);
-                        isoAlgorithm.setGraph(neighborhood);
-                        isoAlgorithm.setNumThreads(NUM_CORES);
-                        isoAlgorithm.setQueryToGraphMap(queryGraphMap);
-                        isoAlgorithm.setLimitedComputation(limitComputation);
-                        isoAlgorithm.compute();
-                        relatedQueries = isoAlgorithm.getRelatedQueries();
-                        relatedQueriesUnique = new HashSet<>(relatedQueries);
-                        debug("Found %d related queries of which uniques are %d", relatedQueries.size(), relatedQueriesUnique.size());
-
-                        keys = popularities.keySet();
-                        //nodes = new ArrayList<Long>();
-                        if (i == 0) {
-                            //8: RANK QUERIES
-                            double pop = 0;
-                            info("Ordering related queries");
-                            watch.reset();
-                            watch.start();
-                            nodes = new ArrayList<>();
-                            //Normalize popularities
-                            //Set<Long> consideredNodes = new HashSet<>();
-                            //Map<Long, List<Long>> mappedNodes;
-                            //for (RelatedQuery relQuery : relatedQueriesUnique) {
-                            //    mappedNodes = relQuery.getMappedNodes();
-                            //    for (List<Long> mapNodes : mappedNodes.values()) {
-                            //        consideredNodes.add(nodes.get(0));
-                            //    }
-                            //}
-                            info("Computed node vectors in %dms", watch.getElapsedTimeMillis());
-                            //Normalize popularities
-                            for (Long n : keys) {
-                                value = popularities.get(n);
-                                if (value > max) {
-                                    max = value;
-                                }
-                                if (value < min) {
-                                    min = value;
-                                }
-                            }
-                            for (Long n : keys) {
-                                popularities.put(n, (popularities.get(n) - min) / (max - min));
-                            }
-                            for (RelatedQuery relQuery : relatedQueriesUnique) {
-                                int intersections = 1;
-                                Set<Long> mappedNodes = relQuery.getUsedNodes();
-                                for (Long q : queryGraph.vertexSet()) {
-                                    if (mappedNodes.contains(q)) {
-                                        intersections++;
+                                for (Long n : keys) {
+                                    value = popularities.get(n);
+                                    if (value > max) {
+                                        max = value;
+                                    }
+                                    if (value < min) {
+                                        min = value;
                                     }
                                 }
-                                intersections *= intersections;
-                                for (Long q : queryGraph.vertexSet()) {
-                                    n1 = relQuery.mapOf(q).get(0);
-                                    //nodes.add(n1);
-                                    if (!popularities.containsKey(n1)) {
-                                        pop = 0.0;
+                                for (Long n : keys) {
+                                    popularities.put(n, (popularities.get(n) - min) / (max - min));
+                                }
+
+                                for (RelatedQuery relQuery : relatedQueriesUnique) {
+                                    int intersections = 1;
+                                    pop = 0;
+                                    similarity = 0;
+
+                                    Set<Long> mappedNodes = relQuery.getUsedNodes();
+                                    for (Long q : queryGraph.vertexSet()) {
+                                        if (mappedNodes.contains(q)) {
+                                            intersections++;
+                                        }
+                                    }
+                                    intersections *= intersections;
+                                    for (Long q : neighbourStartingNodes) {
+                                        for( Long n1 : relQuery.mapOf(q)){
+
+                                            if (popularities.containsKey(n1)) {
+                                                pop += popularities.get(n1);
+                                            }
+
+                                            similarity += score(tempGraphTables.getNodeMap(q), tempGraphTables.getNodeMap(n1));
+
+                                        }
+
+                                        relQuery.addWeight(q, (((lambda * similarity ) + (1 - lambda) * pop)/relQuery.mapOf(q).size()));
+                                    }
+                                    if(intersections == 1){
+                                       orderedQueriesNoIntersect.add(relQuery);
                                     } else {
-                                        pop = popularities.get(n1);
+                                       orderedQueriesIntersect.add(relQuery);
                                     }
-                                    relQuery.addWeight(relQuery.mapOf(q).get(0), (lambda * score(queryTables.getNodeMap(q), graphTables.getNodeMap(n1)) + (1 - lambda) * pop) / (intersections));
+
                                 }
-                                orderedQueries.add(relQuery);
-                            }
 
-                            info("Ranked related queries in %dms", watch.getElapsedTimeMillis());
-                        } //END IF i==0
+                                info("Ranked related queries in %dms", watch.getElapsedTimeMillis());
 
-                        //9: PRINT RELATED
-                        info("Top-%d related queries", topK);
-                        for (RelatedQuery rQuery : orderedQueries.descendingSet()) {
-                            a++;
-                            String s = String.format("[Q%d,value=%f]", a, rQuery.getTotalWeight());
-                            Set<Edge> mappedEdges = rQuery.getUsedEdges();
 
-                            for (Edge edge : mappedEdges ) {
-                                s += (nodeNames.get(edge.getSource()) != null ? nodeNames.get(edge.getSource()) : edge.getSource())
-                                        + "->"
-                                        + (nodeNames.get(edge.getDestination()) != null ? nodeNames.get(edge.getDestination()) : edge.getDestination()) + " | ";
-                            }
-                            debug(s);
-                            if (a >= topK) {
-                                break;
-                            }
+                                //9: PRINT RELATED
+                                info("Top-%d related queries", topK);
+
+
+                                Statistics rank = new Statistics();
+                                rank.addNumericField("Position");
+                                rank.addNumericField("Weight");
+                                rank.addStringField("Query");
+                                rank.addNumericField("Intersect");
+
+                                for(int type = 0;  type<=1 ;type ++ ){
+                                    NavigableSet<RelatedQuery> sortedSet = (type == 0 ? orderedQueriesNoIntersect : orderedQueriesIntersect ).descendingSet();
+                                    a=0;
+                                    for (RelatedQuery rQuery : sortedSet) {
+                                        a++;
+                                        if (a <= topK || a == sortedSet.size() ) {
+                                            rank.addNumericValue("Position", a);
+                                            rank.addNumericValue("Intersect", type);
+                                            rank.addNumericValue("Weight", rQuery.getTotalWeight());
+
+                                            String s = String.format("[Q%d,value=%f]", a, rQuery.getTotalWeight());
+                                            String q = "";
+                                            Set<Edge> mappedEdges = rQuery.getUsedEdges();
+
+                                            int tempEdgeCnt = 0;
+                                            for (Edge edge : mappedEdges ) {
+                                                if(tempEdgeCnt>0){
+                                                    q+= " | ";
+                                                }
+                                                q += (FreebaseConstants.convertLongToMid(edge.getSource()))
+                                                        + "->"
+                                                        + ( FreebaseConstants.convertLongToMid(edge.getDestination()));
+                                                tempEdgeCnt++;
+                                            }
+                                            rank.addStringValue("Query", q);
+                                            debug(s + q);
+                                        }
+                                    }
+                                }
+
+
+
+
+                                StatisticsCSVExporter rankxp = new StatisticsCSVExporter(rank);
+                                Path p = Paths.get(this.queriesOut +  "/" +(new File(queryFile)).getName() + ".top-"+ topK +".csv");
+                                rankxp.write(p);
+
+                            } //END IF i==0
+
+                        } catch (AlgorithmExecutionException ex) {
+                            processError = true;
                         }
 
                     } //END FOR REPETITIONS
-                    watch.reset();
-                    //FREE MAIN MEMORY (hopefully)
-                    debug("GC");
-                    System.gc();
-                    debug("GC Done");
+
+
+                    StatisticsCSVExporter xp = new StatisticsCSVExporter(stat);
+                    Path p = Paths.get(this.queriesOut +  "/" +(new File(queryFile)).getName() + ".stats.csv");
+                    xp.write(p);
+
+
+                    aggStat.addStringValue(Cols.QUERY, (new File(queryFile)).getName());
+                    aggStat.addNumericValue(Cols.NSIZE_E,stat.getAverage(Cols.NSIZE_E) );
+                    aggStat.addNumericValue(Cols.NSIZE_V, stat.getAverage(Cols.NSIZE_V));
+                    aggStat.addNumericValue(Cols.PSIZE_E, stat.getAverage(Cols.PSIZE_E));
+                    aggStat.addNumericValue(Cols.PSIZE_V, stat.getAverage(Cols.PSIZE_V));
+                    aggStat.addNumericValue(Cols.SOLUTIONS, stat.getAverage(Cols.SOLUTIONS));
+                    aggStat.addNumericValue(Cols.NTIME, stat.getAverage(Cols.NTIME));
+                    aggStat.addNumericValue(Cols.TTIME, stat.getAverage(Cols.TTIME));
+                    aggStat.addNumericValue(Cols.PTIME, stat.getAverage(Cols.PTIME));
+                    aggStat.addNumericValue(Cols.STIME, stat.getAverage(Cols.STIME));
+
+
+
+                    fileProgress++;
+                    info("STATUS:   Parsed %s out of %s Queries in  %s secs  expected remaing time %s secs", fileProgress, files.size(), globalWatch.getElapsedTimeSecs(), globalWatch.getElapsedTimeSecs()*(files.size()-fileProgress)/(fileProgress*1.0)    );
+                    if(fileProgress%20 == 0){
+                        //FREE MAIN MEMORY (hopefully)
+                        debug("GC");
+                        System.gc();
+                        debug("GC Done");
+
+                    }
+
                 } //END FOR FILES
+
+
+                StatisticsCSVExporter aggxp = new StatisticsCSVExporter(aggStat);
+                Path p = Paths.get(this.queriesOut +  "/aggregate.stats.csv");
+                aggxp.write(p);
+
+
+
             } //END CHECK FILE EMPTY
         } catch (ParseException ex) {
             fatal("Query parsing failed", ex);
         } catch (IOException ioex) {
             fatal("Unable to open query files: %s ", ioex, query);
             throw new ExecutionException(ioex);
-        } catch (NullPointerException | IllegalStateException | LoadException | AlgorithmExecutionException ex) {
+        } catch (NullPointerException | IllegalStateException | LoadException ex) {
             fatal("Something wrong happened, message: %s", ex.getMessage());
             ex.printStackTrace();
             throw new ExecutionException(ex);
         }
     }
 
-    //See Equation 5 in the paper
-    private void updateVector(Map<Long, Double> vector, Map<Long, Integer> levelNodes,  int level) {
+
+
+
+
+
+    /**
+     * See Equation 5 in the paper
+     * @param vector
+     * @param levelNodes
+     * @param level
+     */
+    protected void updateVector(Map<Long, Double> vector, Map<Long, Integer> levelNodes,  int level) {
         Set<Long> labels = levelNodes.keySet();
         Double value;
         int sqLevel = level * level;
@@ -398,11 +594,18 @@ public class TestExemplar extends Command {
                 value = 0.0;
             }
             value += (levelNodes.get(label) * informativeness.get(label)) / sqLevel;
+
             vector.put(label, value);
         }
     }
 
-    private double score(Map<Long, Integer>[] node1, Map<Long, Integer>[] node2) {
+    /**
+     * Structural similarity between two nodes
+     * @param node1
+     * @param node2
+     * @return
+     */
+    protected double score(Map<Long, Integer>[] node1, Map<Long, Integer>[] node2) {
         assert node1.length == node2.length;
         Map<Long, Double> vector1 = new HashMap<>(), vector2 = new HashMap<>();
 
@@ -414,9 +617,83 @@ public class TestExemplar extends Command {
     }
 
 
+    /**
+     * Find Graph files and try t load them
+     * @param queryPath
+     * @return
+     */
+    protected List<String>  loadQueryFiles( String queryPath ){
+            File dir = new File(queryPath);
+            List<String> files = new ArrayList<>();
+            String tmp;
+            if (dir.isDirectory()) {
+                debug("Loading graph from directory " + dir.getAbsolutePath());
+
+                File[] childFiles = dir.listFiles(new FileFilter() {
+                    @Override
+                    public boolean accept(File child) {
+                        return !child.isDirectory() && child.getName().endsWith(".query");
+                    }
+                });
+
+                for (File child : childFiles) {
+                    try {
+                        tmp = child.getCanonicalPath();
+
+                        debug("Adding graph: " + tmp);
+                        GraphFilesManager.loadGraph(tmp);
+                        files.add(tmp);
+                    } catch ( IOException | ParseException | LoadException | NullPointerException e) {
+                        error("Query %s is not parsable! ", child.getAbsolutePath());
+                        error("Cause is " + e.getMessage());
+                        //e.printStackTrace();
+                    }
+                }
+            } else {
+                try {
+                    tmp = dir.getCanonicalPath();
+                    debug("Adding single graph: " + tmp);
+
+                    GraphFilesManager.loadGraph(tmp);
+                    files.add(tmp);
+                } catch (IOException | ParseException | LoadException | NullPointerException e) {
+                    error("Query %s is not parsable! ", queryPath);
+                    error("Cause is " + e.getMessage());
+                    //Logger.getLogger(TestExemplar.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            }
+            return files;
+    }
+    /**
+     * Checks whether the query is in the knowledge graph
+     * @param queryGraph
+     * @return
+     */
+    protected boolean isQueryMappable(Multigraph queryGraph) {
+
+        for (Long node : queryGraph.vertexSet()) {
+            if (queryGraph.outDegreeOf(node) > graph.outDegreeOf(node)) {
+                error("Query is not mappable in this Knowledge Graph, missing node %s", FreebaseConstants.convertLongToMid(node) );
+                return false;
+            }
+
+            Collection<Edge> edges = graph.outgoingEdgesOf(node);
+
+            for (Edge e : queryGraph.outgoingEdgesOf(node)) {
+                if (!edges.contains(e)) {
+                    error("Query is not mappable in this Knowledge Graph, missing edge %s", FreebaseConstants.convertLongToMid(e.getSource()) + " -> " +  FreebaseConstants.convertLongToMid(e.getDestination()));
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+
+
     @Override
     protected String commandDescription() {
-        return "Compute related queries using mysql flow";
+        return "Compute exemplar queries on Freebase";
     }
 
     @CommandInput(
@@ -439,9 +716,9 @@ public class TestExemplar extends Command {
 
     @CommandInput(
             consoleFormat = "-topk",
-            defaultValue = "10",
+            defaultValue = "0",
             mandatory = false,
-            description = "number of related queries to output (top-k)")
+            description = "number of exemplar queries to output (top-k), when 0 skips ranking")
     public void setTopK(int topK) {
         this.topK = topK;
     }
@@ -541,7 +818,7 @@ public class TestExemplar extends Command {
             mandatory = true,
             description = "node big hubs file")
     public void setHubs(String hubs) {
-        this.hubs = hubs;
+        this.hubsFile = hubs;
     }
 
     @CommandInput(
@@ -563,4 +840,27 @@ public class TestExemplar extends Command {
         this.limitComputation = doLimit;
 
     }
+
+    @CommandInput(
+            consoleFormat = "--no-save",
+            defaultValue = "false",
+            mandatory = false,
+            description = "discard results only compute time")
+    public void setSkipSave(boolean skipSave) {
+        this.skipSave = skipSave;
+    }
+
+    @CommandInput(
+            consoleFormat = "--cores",
+            defaultValue = "24",
+            mandatory = false,
+            description = "core to use for parallelism")
+    public void setNumCores(int cores) {
+        this.cores = cores;
+    }
+
+
 }
+
+
+

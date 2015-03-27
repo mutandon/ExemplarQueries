@@ -233,7 +233,7 @@ public class FreebaseConstants {
         String decimalString = decimal + "";
 
         for (int i = 0; i < decimalString.length(); i+= 2) {
-            if(decimalString.length() < 3 ){
+            if(decimalString.length() < 5 ){
                 mid = decimalString;
             } else {
                 mid = (char)Integer.parseInt(decimalString.substring(i, i + 2)) + mid;
