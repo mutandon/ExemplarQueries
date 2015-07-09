@@ -24,9 +24,11 @@ Then, inside the CLI, first you load the ExQ jar with the libs and then the Grap
  
 
     jar ExQ.jar -lib lib
-    obj $graph BigMultigraphLoader -kb InputData/freebase/freebase
+    obj $graph (BigMultigraphLoader -kb InputData/freebase/freebase)
+
+**Note**: parentheses are important! 
 
 Finally you can run the Exemplar Query test with a command like
 
-    exec TestExemplar -q InputData/queries/queries/my.query.file --graph $graph -kb InputData/freebase/freebase -lf InputData/freebase/freebase-label-frequencies.csv -l 0.5 -c 0.15  -topk 10  -t 0.005  -qout OutputData/quality-stats.csv -h InputData/freebase/big-hubs.tsv -k 2  -r 1
+    exec (TestExemplar -q InputData/queries/queries/my.query.file --graph $graph -kb InputData/freebase/freebase -lf InputData/freebase/freebase-label-frequencies.csv -l 0.5 -c 0.15  -topk 10  -t 0.005  -qout OutputData/quality-stats.csv -h InputData/freebase/big-hubs.tsv -k 2  -r 1)
  
