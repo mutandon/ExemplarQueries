@@ -4,7 +4,9 @@ Exemplar queries is a new query paradigm. This library is able to use Freebase t
 
 This package contains a number of algorithms and optimizations to run exemplar queries. 
 
-The test command to be used is "TestExemplar" it runs the complete flow. In order yo make it runs, freebase cleaned and the query files are needed. Query files are available in http://disi.unitn.it/~themis/exemplarquery/
+The test command to be used is "TestExemplar" it runs the complete flow. In order to run it, Freebase cleaned and the query files are needed. 
+
+Query files are available in http://disi.unitn.it/~themis/exemplarquery/
 
 **Requires** [ExecutionUtilities](https://github.com/mutandon/ExecutionUtilities "Execution Utilities") and [Grava](https://github.com/mutandon/Grava "Grava"). 
 
@@ -21,7 +23,7 @@ Then you can start the DCMD CLI with
     java -Xmx100g -jar lib/ExecUtils-0.2.jar 
 
 Then, inside the CLI, first you load the ExQ jar with the libs and then the Graph on top which you will run the experiments
- 
+
 
     jar ExQ.jar -lib lib
     obj $graph (BigMultigraphLoader -kb InputData/freebase/freebase)
@@ -31,4 +33,4 @@ Then, inside the CLI, first you load the ExQ jar with the libs and then the Grap
 Finally you can run the Exemplar Query test with a command like
 
     exec (TestExemplar -q InputData/queries/queries/my.query.file --graph $graph -kb InputData/freebase/freebase -lf InputData/freebase/freebase-label-frequencies.csv -l 0.5 -c 0.15  -topk 10  -t 0.005  -qout OutputData/quality-stats.csv -h InputData/freebase/big-hubs.tsv -k 2  -r 1)
- 
+

@@ -17,14 +17,16 @@
  */
 package eu.unitn.disi.db.exemplar.commands.util;
 
-import eu.unitn.disi.db.command.util.LoggableObject;
-import eu.unitn.disi.db.exemplar.exceptions.LoadException;
-import eu.unitn.disi.db.exemplar.freebase.FreebaseConstants;
-import eu.unitn.disi.db.grava.exceptions.ParseException;
+import eu.unitn.disi.db.command.exceptions.LoadException;
+import eu.unitn.disi.db.exemplar.utils.NamesProvider;
+import eu.unitn.disi.db.exemplar.utils.names.FreebaseNames;
+import eu.unitn.disi.db.exemplar.utils.names.NoNames;
 import eu.unitn.disi.db.grava.graphs.BaseMultigraph;
 import eu.unitn.disi.db.grava.graphs.Edge;
 import eu.unitn.disi.db.grava.graphs.Multigraph;
-import eu.unitn.disi.db.grava.utils.Utilities;
+import eu.unitn.disi.db.mutilities.LoggableObject;
+import eu.unitn.disi.db.mutilities.StringUtils;
+import eu.unitn.disi.db.mutilities.exceptions.ParseException;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -45,13 +47,26 @@ import java.util.logging.Logger;
  * @author Matteo Lissandrini <ml at disi.unitn.eu>
  */
 public final class GraphFilesManager extends LoggableObject {
-    public static final int VIZ_MAX_EXPORTABLE_DIMENSION  = 200;
 
-    private GraphFilesManager() {
+    public static final int VIZ_MAX_EXPORTABLE_DIMENSION = 200;
+
+    /**
+     *
+     */
+    public NamesProvider names;
+    
+    public GraphFilesManager() {
+        
+           names = new NoNames();
+        
+    }
+    
+    public GraphFilesManager(NamesProvider p) {
+        names = p;
     }
 
     //public static final long DEFAULT_EDGE = Edge.GENERIC_EDGE;
-    public static boolean saveGraph(String filename, Multigraph g) throws LoadException {
+    public boolean saveGraph(String filename, Multigraph g) throws LoadException {
         return saveGraph(filename, g, null, null);
     }
 
@@ -68,7 +83,7 @@ public final class GraphFilesManager extends LoggableObject {
      * @return true if the process succeeds, false otherwise
      * @throws LoadException If an error occurs in the import process
      */
-    public static boolean saveGraph(String filename, Multigraph g, String metadata, List<String> comments)
+    public boolean saveGraph(String filename, Multigraph g, String metadata, List<String> comments)
             throws LoadException {
         boolean result = false;
         if (g == null) {
@@ -100,13 +115,13 @@ public final class GraphFilesManager extends LoggableObject {
         } catch (IOException ex) {
             throw new LoadException("Cannot write file %s", filename, ex);
         } finally {
-            Utilities.close(bw);
+            StringUtils.close(bw);
         }
 
         return result;
     }
 
-    public static <T extends Multigraph> HashMap<Long, String> loadGraph(String filename, T graph) throws ParseException, LoadException  {
+    public <T extends Multigraph> HashMap<Long, String> loadGraph(String filename, T graph) throws ParseException, LoadException {
         Map<String, Long> edgeLabelsCache = new HashMap<>();
         HashMap<Long, String> midLabels = new HashMap<>();
 
@@ -115,7 +130,7 @@ public final class GraphFilesManager extends LoggableObject {
             BufferedReader in = new BufferedReader(new FileReader(file));
             long sourceId;
             long destId;
-            long edgeLabel,lastAddedLabel=0;
+            Long edgeLabel, lastAddedLabel = 0l;
             String line, source, dest, label;
             String[] tokens;
             int count = 0;
@@ -125,72 +140,56 @@ public final class GraphFilesManager extends LoggableObject {
             if (graph == null) {
                 throw new LoadException("Input graph cannot be null");
             }
-
+            String pline;
             while ((line = in.readLine()) != null) {
                 count++;
-                if (!"".equals(line.trim()) && !line.trim().startsWith("#")) { //Comment
+                pline = line.trim();
+                if (!"".equals(pline) && !pline.startsWith("#")) { //Comment
                     //System.out.println(line);
-                    tokens = Utilities.fastSplit(line, ' ', 3); // split on whitespace
+                    tokens = StringUtils.fastSplit(pline, ' ', 3); // split on whitespace
                     if (tokens.length < 3) { // line too short
-                        tokens = Utilities.fastSplit(line, '\t', 3);
+                        tokens = StringUtils.fastSplit(pline, '\t', 3);
                         if (tokens.length != 3) {
-                            throw new ParseException("Line " + count +" is malformed");
+                            throw new ParseException("Line " + count + " is malformed");
                         }
                     }
                     //TODO: This is not the proper way to handle this
                     source = tokens[0];
                     dest = tokens[1];
                     label = tokens[2];
-//                    try {
-//                        sourceId = Long.parseLong(source);
-//                        destId = Long.parseLong(dest);
-//                        edgeLabel = Long.parseLong(label);
-//                    } catch (NumberFormatException nfex) {
-//                        sourceId = FreebaseConstants.convertMidToLong(source);
-//                        destId = FreebaseConstants.convertMidToLong(dest);
-//                        edgeLabel = Edge.GENERIC_EDGE_LABEL;
-//                        if (label != null) {
-//                            if (label.equals("isA")) {
-//                                edgeLabel = FreebaseConstants.ISA_ID;
-//                            } else {
-//                                //LinkedList<String> edgeLabelName = new LinkedList<String>();
-//                                //edgeLabelName.add(label);
-//
-//                                //Map<String, String> mid;
-//
-//                                edgeLabel = FreebaseConstants.getPropertyId(label);
-//                                //edgeLabel = FreebaseConstants.convertMidToLong(mid.get(label));
-//                            }
-//                        }
-//                    }
-
-
 
                     try {
                         sourceId = Long.parseLong(source);
                         destId = Long.parseLong(dest);
-                        edgeLabel = Long.parseLong(label);
                     } catch (NumberFormatException nfex) {
-                        sourceId = FreebaseConstants.convertMidToLong(source);
-                        destId = FreebaseConstants.convertMidToLong(dest);
+                        sourceId = names.getNodeIDFromName(source);
+                        destId = names.getNodeIDFromName(dest);
+                    }
+                    try {
+                        edgeLabel = Long.parseLong(label);
+                    } catch (NumberFormatException nfex) {                                                
                         edgeLabel = Edge.GENERIC_EDGE_LABEL;
                         if (label != null) {
                             label = label.trim();
-                            if (label.equals("isA")) {
-                                edgeLabel = FreebaseConstants.ISA_ID;
-                            } else if(edgeLabelsCache.containsKey(label)){
-                                edgeLabel= edgeLabelsCache.get(label);
+                            if (this.names instanceof FreebaseNames && label.equals("isA")) {
+                                edgeLabel = FreebaseNames.ISA_ID;
+                            } else if (edgeLabelsCache.containsKey(label)) {
+                                edgeLabel = edgeLabelsCache.get(label);
                             } else {
 //                                LinkedList<String> edgeLabelName = new LinkedList<String>();
 //                                edgeLabelName.add(label);
-                                try{
-                                    edgeLabel = FreebaseConstants.getPropertyId(label);
-                                } catch(NullPointerException ex){
-                                    throw ex;
-                                }
-                                if( edgeLabel >= 0 ) {
+                                //try {
+                                
+                                    edgeLabel = names.getLabelIDFromName(label);
+                                    if (edgeLabel == null) {
+                                        throw new ParseException("Cannot parse label '%s' on line  %s ", label, line);
+                                    }
+                                //} catch (NullPointerException ex) {
+                                //    throw new ParseException("Cannot parse label '%s' on line [%s]  %s ", ex, label,count, line );
+                                //}
+                                if (edgeLabel >= 0) {
                                     edgeLabelsCache.put(label, edgeLabel);
-                                }  else {
+                                } else {
                                     lastAddedLabel++;
                                     edgeLabelsCache.put(label, lastAddedLabel);
                                     edgeLabel = lastAddedLabel;
@@ -212,15 +211,14 @@ public final class GraphFilesManager extends LoggableObject {
         return midLabels;
     }
 
-    public static Multigraph loadGraph(String filename) throws ParseException, LoadException {
+    public Multigraph loadGraph(String filename) throws ParseException, LoadException {
         BaseMultigraph graph = new BaseMultigraph();
         loadGraph(filename, graph);
         return graph;
     }
 
-
-    public static HashMap<Long, String> getMidLabels(String filename) throws ParseException, LoadException{
-        HashMap<Long, String> midLabels = new HashMap<Long, String>();
+    public HashMap<Long, String> getMidLabels(String filename) throws ParseException, LoadException {
+        HashMap<Long, String> midLabels = new HashMap<>();
         try {
             File file = new File(filename);
             BufferedReader in = new BufferedReader(new FileReader(file));
@@ -234,11 +232,11 @@ public final class GraphFilesManager extends LoggableObject {
                 count++;
                 if (!"".equals(line.trim()) && !line.trim().startsWith("#")) { //Comment
                     //System.out.println(line);
-                    tokens = Utilities.fastSplit(line, ' ', 3); // split on whitespace
+                    tokens = StringUtils.fastSplit(line, ' ', 3); // split on whitespace
                     if (tokens.length < 3) { // line too short
-                        tokens = Utilities.fastSplit(line, '\t', 3);
+                        tokens = StringUtils.fastSplit(line, '\t', 3);
                         if (tokens.length != 3) {
-                            throw new ParseException("Line " + count +" is malformed");
+                            throw new ParseException("Line " + count + " is malformed");
                         }
                     }
                     label = tokens[2];
@@ -247,15 +245,14 @@ public final class GraphFilesManager extends LoggableObject {
                     } catch (NumberFormatException nfex) {
                         edgeLabel = Edge.GENERIC_EDGE_LABEL;
                         if (label != null) {
-                            if (label.equals("isA")) {
-                                edgeLabel = FreebaseConstants.ISA_ID;
+                            if ( this.names instanceof FreebaseNames && label.equals("isA")) {
+                                edgeLabel = FreebaseNames.ISA_ID;
                             } else {
                                 //LinkedList<String> edgeLabelName = new LinkedList<String>();
                                 //edgeLabelName.add(label);
 
                                 //Map<String, String> mid;
-
-                                edgeLabel = FreebaseConstants.getPropertyId(label);
+                                edgeLabel = names.getLabelIDFromName(label);
                                 //edgeLabel = FreebaseConstants.convertMidToLong(mid.get(label));
                             }
                             midLabels.put(edgeLabel, label);
@@ -297,8 +294,6 @@ public final class GraphFilesManager extends LoggableObject {
         boolean result = false;
         TreeMap<Long, Integer> idMap = new TreeMap<Long, Integer>();
 
-
-
         if (g == null) {
             throw new LoadException("Graph cannot be null");
         }
@@ -307,7 +302,6 @@ public final class GraphFilesManager extends LoggableObject {
             filename += ".isA";
         }
         filename += ".net";
-
 
         BufferedWriter bw = null;
         Collection<Long> verteces = g.vertexSet();
@@ -324,7 +318,7 @@ public final class GraphFilesManager extends LoggableObject {
                 Collection<Edge> edges = g.incomingEdgesOf(c);
                 edges.addAll(g.outgoingEdgesOf(c));
                 for (Edge edge : edges) {
-                    if (edge.getLabel().equals(FreebaseConstants.ISA_ID)) {
+                    if (edge.getLabel().equals(FreebaseNames.ISA_ID)) {
                         addVertex = true;
                         break;
                     }
@@ -356,7 +350,7 @@ public final class GraphFilesManager extends LoggableObject {
 
             for (Long c : verteces) {
                 if (!onlyISA || idMap.containsKey(c)) {
-                    bw.append(idMap.get(c) + " \"http://www.freebase.com" + FreebaseConstants.convertLongToMid(c) + "\"\n");
+                    bw.append(idMap.get(c) + " \"http://www.freebase.com" + FreebaseNames.convertLongToMid(c) + "\"\n");
                 }
             }
 
@@ -366,7 +360,7 @@ public final class GraphFilesManager extends LoggableObject {
                 if (!onlyISA || idMap.containsKey(edge.getSource())) {
                     bw.append(idMap.get(edge.getSource()) + " ")
                             .append(idMap.get(edge.getDestination()) + " ")
-                            .append((edge.getLabel() == FreebaseConstants.ISA_ID ? "1" : "10") + "\n");
+                            .append((edge.getLabel() == FreebaseNames.ISA_ID ? "1" : "10") + "\n");
                 }
             }
 
@@ -374,19 +368,17 @@ public final class GraphFilesManager extends LoggableObject {
         } catch (IOException ex) {
             throw new LoadException("Cannot write file %s", filename, ex);
         } finally {
-            Utilities.close(bw);
+            StringUtils.close(bw);
         }
 
         return result;
     }
 
-
-    public static boolean exportGraphToVIZ(String filename, Multigraph g, String metadata, boolean onlyISA) throws LoadException {
+    public boolean exportGraphToVIZ(String filename, Multigraph g, String metadata, boolean onlyISA) throws LoadException {
         return exportGraphToVIZ(filename, g, metadata, onlyISA, null, null);
     }
 
-
-    public static boolean exportGraphToVIZ(String filename, Multigraph g, String metadata, boolean onlyISA, String postfix, Collection<Long> queryNodes) throws LoadException {
+    public boolean exportGraphToVIZ(String filename, Multigraph g, String metadata, boolean onlyISA, String postfix, Collection<Long> queryNodes) throws LoadException {
         boolean result = false;
         TreeMap<Long, String> idMap = new TreeMap<>();
         HashMap<Long, String> midLabels = null;
@@ -404,17 +396,18 @@ public final class GraphFilesManager extends LoggableObject {
         if (onlyISA) {
             filename += ".isA";
         }
-        if(postfix!=null && !postfix.isEmpty()){
-            filename += "."+postfix;
+        if (postfix != null && !postfix.isEmpty()) {
+            filename += "." + postfix;
         }
         filename += ".dot";
 
         BufferedWriter bw = null;
         Collection<Long> verteces = g.vertexSet();
         Collection<Edge> outEdges = g.edgeSet();
-
-        if((verteces.size() + outEdges.size())/2 > VIZ_MAX_EXPORTABLE_DIMENSION ){
-            throw new LoadException("Graph too big to be exported in this format");
+        
+        int exportSize = (verteces.size() + outEdges.size()) / 2;
+        if (exportSize > VIZ_MAX_EXPORTABLE_DIMENSION) {
+            throw new LoadException("Graph too big to be exported in this format: " + exportSize);
         }
 
         boolean addVertex = false;
@@ -426,7 +419,7 @@ public final class GraphFilesManager extends LoggableObject {
                 Collection<Edge> edges = g.incomingEdgesOf(c);
                 edges.addAll(g.outgoingEdgesOf(c));
                 for (Edge edge : edges) {
-                    if (edge.getLabel().equals(FreebaseConstants.ISA_ID)) {
+                    if (edge.getLabel().equals(FreebaseNames.ISA_ID)) {
                         addVertex = true;
                         break;
                     }
@@ -434,16 +427,15 @@ public final class GraphFilesManager extends LoggableObject {
             }
 
             if (!onlyISA || addVertex) {
-                String name = ""+c;
-                try{
-                    name =  FreebaseConstants.convertLongToMid(c);
-                } catch(StringIndexOutOfBoundsException e){
+                String name = "" + c;
+                try {
+                    name = this.names.getLabelNameFromID(c);
+                } catch (StringIndexOutOfBoundsException e) {
 
                 }
                 idMap.put(c, name);
             }
         }
-
 
         try {
             bw = new BufferedWriter(new FileWriter(filename));
@@ -454,10 +446,10 @@ public final class GraphFilesManager extends LoggableObject {
                 bw.append("/* META:" + metadata).append("*/\n");
             }
 
-            bw.append("layout=\"circo\";\n\n");
+            //bw.append("layout=\"circo\";\n\n");
             //bw.append("nodestep = 200;");
 
-            if(queryNodes!=null){
+            if (queryNodes != null) {
                 for (Long l : queryNodes) {
                     bw.append("\"" + idMap.get(l) + "\" [style=\"filled\", fillcolor=\"green\"];\n");
                 }
@@ -466,18 +458,18 @@ public final class GraphFilesManager extends LoggableObject {
             //"Super Mario Universe" -> "Shigeru Miyamoto" [ label = "fictional_universe/created_by" ];
             for (Edge edge : outEdges) {
                 if (!onlyISA || idMap.containsKey(edge.getSource())) {
-                    edgeLabel = midLabels != null ? midLabels.get(edge.getLabel()) : edge.getLabel()+"";
-                    edgeLabel= edgeLabel!= null ? edgeLabel :edge.getLabel()+"" ;
+                    edgeLabel = midLabels != null ? midLabels.get(edge.getLabel()) : edge.getLabel() + "";
+                    edgeLabel = edgeLabel != null ? edgeLabel : edge.getLabel() + "";
 
-                    if(!edgeLabel.equals(FreebaseConstants.ISA) ) {
+                    if (!edgeLabel.equals(FreebaseNames.ISA)) {
                         int i = edgeLabel.lastIndexOf('/');
-                        edgeLabel = edgeLabel.substring(i+1);
+                        edgeLabel = edgeLabel.substring(i + 1);
                     }
 
                     bw.append("\"" + idMap.get(edge.getSource()) + "\" ")
                             .append(" -> ")
-                            .append("\"" +idMap.get(edge.getDestination()) + "\" ")
-                            .append("[ label = \""+ edgeLabel + "\" ];\n");
+                            .append("\"" + idMap.get(edge.getDestination()) + "\" ")
+                            .append("[ label = \"" + edgeLabel + "\" ];\n");
                 }
             }
 
@@ -487,9 +479,68 @@ public final class GraphFilesManager extends LoggableObject {
         } catch (IOException ex) {
             throw new LoadException("Cannot write file %s", filename, ex);
         } finally {
-            Utilities.close(bw);
+            StringUtils.close(bw);
         }
 
         return result;
     }
+
+    
+    public String getVIZString(Multigraph g) throws LoadException {
+
+        HashMap<Long, String> idMap = new HashMap<>();
+        
+
+        if (g == null) {
+            throw new LoadException("Graph cannot be null");
+        }
+
+        StringBuilder bw;
+        Collection<Long> verteces = g.vertexSet();
+        Collection<Edge> outEdges = g.edgeSet();
+
+        if ((verteces.size() + outEdges.size()) / 2 > VIZ_MAX_EXPORTABLE_DIMENSION) {
+            throw new LoadException("Graph too big to be exported in this format");
+        }
+
+        for (Long c : verteces) {
+            String name = "" + c;
+            try {
+                name = this.names.getNodeNameFromID(c);
+            } catch (StringIndexOutOfBoundsException e) {
+
+            }
+            idMap.put(c, name);
+        }
+
+        bw = new StringBuilder();
+
+        bw.append("digraph knowledge_base_").append(this.names.getName()).append("  {");
+
+        String edgeLabel;
+        //"Super Mario Universe" -> "Shigeru Miyamoto" [ label = "fictional_universe/created_by" ];
+        for (Edge edge : outEdges) {
+
+            edgeLabel = names.getLabelNameFromID(edge.getLabel());
+
+            /*if (!edgeLabel.equals(FreebaseConstants.ISA)) {
+                int i = edgeLabel.lastIndexOf('/');
+                edgeLabel = edgeLabel.substring(i + 1);
+            }*/
+
+            bw.append("\"").append(idMap.get(edge.getSource())).append("\" ")
+                    .append(" -> ").append("\"")
+                    .append(idMap.get(edge.getDestination()))
+                    .append("\" ")
+                    .append("[ label = \"")
+                    .append(edgeLabel)
+                    .append("\" ];\n");
+
+        }
+
+        bw.append("}\n");
+
+        return bw.toString();
+    }
+
 }

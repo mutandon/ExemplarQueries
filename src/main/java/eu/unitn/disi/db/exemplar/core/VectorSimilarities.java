@@ -24,6 +24,7 @@
 
 package eu.unitn.disi.db.exemplar.core;
 
+import java.util.BitSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -36,8 +37,7 @@ public class VectorSimilarities {
     private VectorSimilarities() {
     }
     
-    public static double cosine(Map<Long, Double> vector1, Map<Long,Double> vector2, boolean normalize)
-    {
+    public static double cosine(Map<Long, Double> vector1, Map<Long,Double> vector2, boolean normalize) {
         if (vector1 == null || vector2 == null) {
             return 0.0;
         }
@@ -62,6 +62,28 @@ public class VectorSimilarities {
         }
 
         return intersection / (Math.sqrt(v1SqNorm * v2SqNorm)/* - intersection*/);
+    }
+    
+    public static double cosine(BitSet vector1, BitSet vector2, boolean normalize) {
+        if (vector1 == null || vector2 == null) {
+            return 0.0;
+        }
+        
+        double norm1 = normalize? vector1.cardinality()  : 1;
+        double norm2 = normalize? vector2.cardinality() : 1;
+        
+        double intersectionSize = 0, v1SqNorm, v2SqNorm;
+        
+        BitSet intersection = new BitSet();
+        intersection.or(vector1);
+        intersection.and(vector2);
+        intersectionSize = intersection.cardinality();
+        
+        v1SqNorm = Math.sqrt(Math.pow(1/norm1, 2)*vector1.cardinality());
+        v2SqNorm = Math.sqrt(Math.pow(1/norm2, 2)*vector2.cardinality());
+        //We use cosine as a metric
+        
+        return intersectionSize / (v1SqNorm * v2SqNorm);
     }
     
     public static void normalize(Map<Long, Double> vector) {
