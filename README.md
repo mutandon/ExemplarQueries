@@ -49,4 +49,4 @@ Finally you can run the Exemplar Query test with a command like
 
     exec (TestExemplar -q InputData/queries/my.query.file --graph $graph -kb InputData/freebase/freebase -lf InputData/freebase/freebase-label-frequencies.csv -l 0.5 -c 0.15  -topk 10  -t 0.005  -qout OutputData/quality-stats.csv -h InputData/freebase/big-hubs.tsv   -r 1)
 
-These are useful because you can run different commands, while loading the data in memory only once, e.g., when you are debugging differ versions of the code.
+These are useful because you can run different commands, while loading the data in memory only once, e.g., when you are debugging different versions of the code.
