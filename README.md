@@ -16,19 +16,18 @@ Please see [The Exemplar Query project Page](https://disi.unitn.it/~lissandrini/
 If you want to follow the easy installation steps, then it needs `bash`, `maven` for the `mvn` command, `git`, and `python 3` installed.
 
 ## Installation
-
-1. Clone the repository, this will create the folder `ExemplarQueries
+0. Enter a project folder, here `./`, and run the following without entering sub-directories
+1. Clone this repository, this will create the folder `ExemplarQueries
 ` with all the code inside
-2. Run the Code Installation script `ExemplarQueries
-/scripts/install.sh`
-3. Run the script to get the data `ExemplarQueries
-/scripts/get-data.sh`
+2. Run the Code Installation script `./ExemplarQueries/scripts/install.sh`
+3. Run the script to get the data `./ExemplarQueries/scripts/get-data.sh`
 4. Enter the deploy directory (called `ExQ` by default) and run the pre-processing script `cd ./ExQ && ./scripts/prepare.sh`
 5. Get our queries: `curl https://disi.unitn.it/~lissandrini/files/queries-VLDB.zip -o /tmp/queries.zip && unzip /tmp/queries.zip  -d ./InputData/freebase/`
+6. You can run the test `./scripts/run.sh` or use the CLI in the `CommandUtilities`
 
 
 
-## Running Your Own Examples
+## Running Your Own Examples with the CLI
 
 Running code and Example is not straightforward.
 
@@ -50,3 +49,4 @@ Finally you can run the Exemplar Query test with a command like
 
     exec (TestExemplar -q InputData/queries/my.query.file --graph $graph -kb InputData/freebase/freebase -lf InputData/freebase/freebase-label-frequencies.csv -l 0.5 -c 0.15  -topk 10  -t 0.005  -qout OutputData/quality-stats.csv -h InputData/freebase/big-hubs.tsv   -r 1)
 
+These are useful because you can run different commands, while loading the data in memory only once, e.g., when you are debugging differ versions of the code.
