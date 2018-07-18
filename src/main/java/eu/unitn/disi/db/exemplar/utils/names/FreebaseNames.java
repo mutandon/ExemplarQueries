@@ -317,7 +317,7 @@ public class FreebaseNames implements NamesProvider{
     private void loadProperties() throws IOException {
         propertiesToId = HashObjLongMaps.<String>newUpdatableMap();
         idToProperties = HashLongObjMaps.<String>newUpdatableMap();
-        BufferedReader reader = null;
+        BufferedReader reader = null;        
         try {
             String line;
             String[] splittedLine;
