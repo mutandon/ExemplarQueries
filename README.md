@@ -51,8 +51,8 @@ These are useful because you can run different commands, while loading the data 
 
 ## Citing the work
 Please cite us if you use the code in your project or publication
-    
-**Multi-Exemplar**
+
+**Multi-Exemplar Queries**
 
 ```bibtex
 @inproceedings{lissandrini2018multi,
@@ -63,7 +63,7 @@ Please cite us if you use the code in your project or publication
 }
 ```
 
-**Exemplar queries journal**
+**Exemplar Queries (Extended version,  VLDB Journal)**
 
 ```bibtex
 @article{mottin2016exemplar,
@@ -76,7 +76,7 @@ Please cite us if you use the code in your project or publication
 }
 ```
 
-**Exemplar queries**
+**Exemplar Queries**
 
 ```bibtex
 @article{mottin2014exemplar,
