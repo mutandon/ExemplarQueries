@@ -334,9 +334,11 @@ public abstract class BaseQueryGraphTest extends Command {
         try {
             this.inputDir = new File(input);
         } catch (NullPointerException n) {
+            error("Cannot read input directory or file %s", n, input);
             throw new ExecutionException("Cannot read input directory or file %s", n, input);
         }
         if (!inputDir.exists() || !inputDir.canRead()) {
+            error("Cannot read input directory or file %s", input);
             throw new ExecutionException("Cannot read input directory or file %s", input);
         }
     }
