@@ -7,7 +7,7 @@ This package contains a number of algorithms and optimizations to run exemplar q
 
 The test command to be used is "TestExemplar" it runs the complete flow. In order to run it, the proper Freebase files cleaned and the query files are needed. 
 
-Please see [The Exemplar Query project Page](https://disi.unitn.it/~lissandrini/exemplar.html) for more background.
+Please see [The Exemplar Query project Page](https://people.cs.aau.dk/~matteo/exemplar.html) for more background.
 
 **Requires** 
 - [ExecutionUtilities](https://github.com/mutandon/ExecutionUtilities "Execution Utilities")
